@@ -2,7 +2,8 @@
 #include<stdlib.h>
 #include<pcap/pcap.h>
 #include<arpa/inet.h>
-void analyze_packets();
+#include"ethernet.h"
+void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
 
 char errbuf[PCAP_ERRBUF_SIZE];
 int main()
@@ -29,12 +30,12 @@ int main()
     if(handle)
     {
 	fprintf(fp,"pcap_open_live success\n");
-        printf("success\n");
+        printf("pcap_open_live success\n");
     }
     else
     {
         printf("open_live error%s\n",errbuf);
-        exit(0);
+        exit(1);
     }
 
     bpf_u_int32 netp,maskp;
@@ -44,11 +45,13 @@ int main()
     if(!ret)
     {
         printf("call pcap_lookupnet success\n");
+        fprintf(fp,"call pcap_lookupnet success\n");
     }
     else
     {
         printf("lookupnet error%s\n",errbuf);
-        exit(0);
+        fprintf(fp,"call pcap_lookupnet failure\n");
+        exit(1);
     }
 
     addr.s_addr=netp;
@@ -75,22 +78,17 @@ int main()
 	    printf("mask %s\n",mask);
     }
     
-    
 
-
-/*
-    struct pcap_pkthdr *header;
-    const unsigned char* ret_ch=pcap_next(handle,header);
+    ret=pcap_loop(handle,-1,analyze_packets,NULL);
     
-    if(ret_ch==NULL)
-    {
-        printf("Don not capture packet\n");
-        exit(0);
-    }
-    ret=pcap_loop(handle,-1,analyze_packets,errbuf);
-   */
     pcap_freealldevs(alldevsp);
     fclose(fp);
     fclose(filter);
     return 0;
+}
+
+
+void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
+{
+
 }
