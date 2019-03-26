@@ -3,6 +3,9 @@
 #include<pcap/pcap.h>
 #include<arpa/inet.h>
 #include"ethernet.h"
+
+#define SIZE_ETHERNET 14
+
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -80,7 +83,18 @@ int main()
     
 
     ret=pcap_loop(handle,-1,analyze_packets,NULL);
-    
+    if(ret==0)
+    {
+	    fprintf(fp,"pcap_loop success\n");
+	    printf("pcap_loop success\n");
+
+    }
+    else
+    {
+	    fprintf(fp,"pcap_loop failure\n");
+	    printf("pcap_loop failure\n");
+
+    }
     pcap_freealldevs(alldevsp);
     fclose(fp);
     fclose(filter);
@@ -90,5 +104,22 @@ int main()
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
+    const struct mac_header *ethernet;
+    const struct ip_header  *ip;
+    const struct tcp_header *tcp;
+    const char* payload;
 
+
+    printf("********************************************\n");
+    ethernet = (struct mac_header*)(packet);
+    printf("%02x %02x %02x %02x %02x %02x\n",ntohs(ethernet->mac_dhost[0]),ethernet->mac_dhost[1],ethernet->mac_dhost[2],ethernet->mac_dhost[3],ethernet->mac_dhost[4],ethernet->mac_dhost[5]);
+    printf("%02x %02x %02x %02x %02x %02x\n",ethernet->mac_shost[0],ethernet->mac_shost[1],ethernet->mac_shost[2],ethernet->mac_shost[3],ethernet->mac_shost[4],ethernet->mac_shost[5]);
+    printf("%d\n",ntohs(ethernet->mac_type));
+    switch(ntohs(ethernet->mac_type)){
+	    case 0x0800:printf("IP PACKET\n");break;
+	    case 0x0806:printf("ARP PACKET\n");break;
+	    case 0x8035:printf("RARP PACKET\n");break;
+    }
+
+    
 }
