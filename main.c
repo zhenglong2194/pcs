@@ -3,6 +3,7 @@
 #include<pcap/pcap.h>
 #include<arpa/inet.h>
 #include"ethernet.h"
+#include<ctype.h>
 
 #define SIZE_ETHERNET 14
 
@@ -107,19 +108,68 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     const struct mac_header *ethernet;
     const struct ip_header  *ip;
     const struct tcp_header *tcp;
-    const char* payload;
+    const unsigned char* payload;
 
 
     printf("********************************************\n");
     ethernet = (struct mac_header*)(packet);
-    printf("%02x %02x %02x %02x %02x %02x\n",ntohs(ethernet->mac_dhost[0]),ethernet->mac_dhost[1],ethernet->mac_dhost[2],ethernet->mac_dhost[3],ethernet->mac_dhost[4],ethernet->mac_dhost[5]);
-    printf("%02x %02x %02x %02x %02x %02x\n",ethernet->mac_shost[0],ethernet->mac_shost[1],ethernet->mac_shost[2],ethernet->mac_shost[3],ethernet->mac_shost[4],ethernet->mac_shost[5]);
+    printf("%02x %02x %02x %02x %02x %02x\n",
+		    ntohs(ethernet->mac_dhost[0]),
+		    ethernet->mac_dhost[1],
+		    ethernet->mac_dhost[2],
+		    ethernet->mac_dhost[3],
+		    ethernet->mac_dhost[4],
+		    ethernet->mac_dhost[5]);
+    printf("%02x %02x %02x %02x %02x %02x\n",
+		    ethernet->mac_shost[0],
+		    ethernet->mac_shost[1],
+		    ethernet->mac_shost[2],
+		    ethernet->mac_shost[3],
+		    ethernet->mac_shost[4],
+		    ethernet->mac_shost[5]);
     printf("%d\n",ntohs(ethernet->mac_type));
     switch(ntohs(ethernet->mac_type)){
 	    case 0x0800:printf("IP PACKET\n");break;
 	    case 0x0806:printf("ARP PACKET\n");break;
 	    case 0x8035:printf("RARP PACKET\n");break;
     }
+    ip=(struct ip_header*)(packet+14);
+    printf("ip:src addr%s\n",inet_ntoa(ip->ip_src));
+    printf("ip:drc addr%s\n",inet_ntoa(ip->ip_dst));
+    switch(ip->ip_p){
+	    case IPPROTO_TCP:
+		    printf("TCP\n");
+		    break;
+            case IPPROTO_UDP:
+		    printf("UDP\n");
+		    break;
+       	   case IPPROTO_ICMP:
+		    printf("ICMP");
+    }
+    tcp=(struct tcp_header*)(packet+14+20);
+    printf("源端口%d",ntohs(tcp->th_sport));
+    printf("目的端口%d",ntohs(tcp->th_dport));
 
-    
+    unsigned int size_tcp=TH_OFF(tcp)*4;
+    payload=(u_char*)(packet+14+20+size_tcp);
+   const u_char *ch=payload; 
+   unsigned int size_payload=ntohs(ip->ip_len)-(20+size_tcp);
+   for(int i=0;i<size_payload;i++)
+   {
+	   printf("%02x",*ch);
+	   if(i%16==0)
+		   printf("\n");
+	   ch++;
+   }
+   for(int i=0;i<size_payload;i++)
+   {
+	   if(isprint(*ch))
+	   	 printf("%c",*ch);
+	   else
+		   printf("0");
+	   if(i%16==0)
+		   printf("\n");
+	   ch++;
+   }
+   printf("\n");
 }
