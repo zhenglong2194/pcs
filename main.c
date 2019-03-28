@@ -79,7 +79,7 @@ int main()
     }
     else
     {
-	    printf("mask %s\n",mask);
+	    printf("mask is%s\n",mask);
     }
     
 
@@ -113,21 +113,20 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 
     printf("********************************************\n");
     ethernet = (struct mac_header*)(packet);
-    printf("%02x %02x %02x %02x %02x %02x\n",
+    printf("mac 目的地址：%02x %02x %02x %02x %02x %02x\n",
 		    ntohs(ethernet->mac_dhost[0]),
 		    ethernet->mac_dhost[1],
 		    ethernet->mac_dhost[2],
 		    ethernet->mac_dhost[3],
 		    ethernet->mac_dhost[4],
 		    ethernet->mac_dhost[5]);
-    printf("%02x %02x %02x %02x %02x %02x\n",
+    printf("mac 源地址:%02x %02x %02x %02x %02x %02x\n",
 		    ethernet->mac_shost[0],
 		    ethernet->mac_shost[1],
 		    ethernet->mac_shost[2],
 		    ethernet->mac_shost[3],
 		    ethernet->mac_shost[4],
 		    ethernet->mac_shost[5]);
-    printf("%d\n",ntohs(ethernet->mac_type));
     switch(ntohs(ethernet->mac_type)){
 	    case 0x0800:printf("IP PACKET\n");break;
 	    case 0x0806:printf("ARP PACKET\n");break;
@@ -144,32 +143,40 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 		    printf("UDP\n");
 		    break;
        	   case IPPROTO_ICMP:
-		    printf("ICMP");
+		    printf("ICMP\n");
     }
     tcp=(struct tcp_header*)(packet+14+20);
-    printf("源端口%d",ntohs(tcp->th_sport));
-    printf("目的端口%d",ntohs(tcp->th_dport));
+    printf("源端口  :%d\n",ntohs(tcp->th_sport));
+    printf("目的端口:%d\n",ntohs(tcp->th_dport));
 
     unsigned int size_tcp=TH_OFF(tcp)*4;
     payload=(u_char*)(packet+14+20+size_tcp);
-   const u_char *ch=payload; 
+   const u_char *ch=payload;
+   const u_char *ch2=payload; 
    unsigned int size_payload=ntohs(ip->ip_len)-(20+size_tcp);
-   for(int i=0;i<size_payload;i++)
+   unsigned int offset=0;
+   for(int i=0;i<=size_payload;)
    {
-	   printf("%02x",*ch);
-	   if(i%16==0)
-		   printf("\n");
-	   ch++;
-   }
-   for(int i=0;i<size_payload;i++)
-   {
-	   if(isprint(*ch))
-	   	 printf("%c",*ch);
-	   else
-		   printf("0");
-	   if(i%16==0)
-		   printf("\n");
-	   ch++;
+	   for(int j=0;j<16;j++)
+	   {
+		   printf("%02x ",*ch);
+		   ch++;
+		   if(offset+j==size_payload)
+			   break;
+	   }
+	   printf("\t");
+	   for(int j=0;j<16;j++)
+	   {
+		   if(isprint(*ch2))
+		   	printf("%c",*ch2);
+		   else
+			   printf("0");
+		   ch2++;
+		   if(offset+j==size_payload)
+			   break;
+	   }
+	   printf("\n");
+	   i+=16;
    }
    printf("\n");
 }
