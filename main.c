@@ -4,7 +4,8 @@
 #include<arpa/inet.h>
 #include"ethernet.h"
 #include<ctype.h>
-
+#include<string.h>
+#include<time.h>
 #define SIZE_ETHERNET 14
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
@@ -105,16 +106,17 @@ int main()
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
-    const struct mac_header *ethernet;
-    const struct ip_header  *ip;
-    const struct tcp_header *tcp;
-    const unsigned char* payload;
+    const struct mac_header *ethernet=NULL;
+    const struct ip_header  *ip=NULL;
+    const struct tcp_header *tcp=NULL;
+    const unsigned char* payload=NULL;
 
 
     printf("********************************************\n");
+    
     ethernet = (struct mac_header*)(packet);
     printf("mac 目的地址：%02x %02x %02x %02x %02x %02x\n",
-		    ntohs(ethernet->mac_dhost[0]),
+		    ethernet->mac_dhost[0],
 		    ethernet->mac_dhost[1],
 		    ethernet->mac_dhost[2],
 		    ethernet->mac_dhost[3],
@@ -135,16 +137,37 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     ip=(struct ip_header*)(packet+14);
     printf("ip:src addr%s\n",inet_ntoa(ip->ip_src));
     printf("ip:drc addr%s\n",inet_ntoa(ip->ip_dst));
+
+    unsigned int tcp_num=0,icmp_num=0,udp_num=0;
+    unsigned int paclen = header->len;//解析出包长度
+    unsigned pacaplen=header->caplen;//解析出包字节数
+    char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
+    static unsigned int count=0;
+    count++;//统计数据包总数
+    static double packet_count=0;//每秒数据包数量
+    static unsigned int packets_len=0;//总流量
+    static unsigned int tick_count=0;//时间起点
+    static double speed=0.0;//流量传输速度
+    packets_len+=header->len;
+    packet_count++;
+
+    printf("strtimr %s\n",strtime);
+
     switch(ip->ip_p){
 	    case IPPROTO_TCP:
 		    printf("TCP\n");
+		    tcp_num++;
 		    break;
             case IPPROTO_UDP:
 		    printf("UDP\n");
+		    udp_num++;
 		    break;
        	   case IPPROTO_ICMP:
 		    printf("ICMP\n");
+		    icmp_num++;
     }
+
+    printf("tcp_number%d\tudp_number%d\ticmp_number%d\n",tcp_num,udp_num,icmp_num);
     tcp=(struct tcp_header*)(packet+14+20);
     printf("源端口  :%d\n",ntohs(tcp->th_sport));
     printf("目的端口:%d\n",ntohs(tcp->th_dport));
@@ -155,9 +178,9 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
    const u_char *ch2=payload; 
    unsigned int size_payload=ntohs(ip->ip_len)-(20+size_tcp);
    unsigned int offset=0;
-   for(int i=0;i<=size_payload;)
+   for(unsigned int i=0;i<=size_payload;)
    {
-	   for(int j=0;j<16;j++)
+	   for(unsigned int j=0;j<16;j++)
 	   {
 		   printf("%02x ",*ch);
 		   ch++;
@@ -165,7 +188,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 			   break;
 	   }
 	   printf("\t");
-	   for(int j=0;j<16;j++)
+	   for(unsigned int j=0;j<16;j++)
 	   {
 		   if(isprint(*ch2))
 		   	printf("%c",*ch2);
