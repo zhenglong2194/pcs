@@ -103,7 +103,6 @@ int main()
     return 0;
 }
 
-
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
     const struct mac_header *ethernet=NULL;
@@ -115,28 +114,13 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     printf("********************************************\n");
     
     ethernet = (struct mac_header*)(packet);
-    printf("mac 目的地址：%02x %02x %02x %02x %02x %02x\n",
-		    ethernet->mac_dhost[0],
-		    ethernet->mac_dhost[1],
-		    ethernet->mac_dhost[2],
-		    ethernet->mac_dhost[3],
-		    ethernet->mac_dhost[4],
-		    ethernet->mac_dhost[5]);
-    printf("mac 源地址:%02x %02x %02x %02x %02x %02x\n",
-		    ethernet->mac_shost[0],
-		    ethernet->mac_shost[1],
-		    ethernet->mac_shost[2],
-		    ethernet->mac_shost[3],
-		    ethernet->mac_shost[4],
-		    ethernet->mac_shost[5]);
+    
     switch(ntohs(ethernet->mac_type)){
 	    case 0x0800:printf("IP PACKET\n");break;
 	    case 0x0806:printf("ARP PACKET\n");break;
 	    case 0x8035:printf("RARP PACKET\n");break;
     }
     ip=(struct ip_header*)(packet+14);
-    printf("ip:src addr%s\n",inet_ntoa(ip->ip_src));
-    printf("ip:drc addr%s\n",inet_ntoa(ip->ip_dst));
 
     unsigned int tcp_num=0,icmp_num=0,udp_num=0;
     unsigned int paclen = header->len;//解析出包长度
@@ -151,7 +135,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     packets_len+=header->len;
     packet_count++;
 
-    printf("strtimr %s\n",strtime);
+
 
     switch(ip->ip_p){
 	    case IPPROTO_TCP:
@@ -167,37 +151,58 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 		    icmp_num++;
     }
 
-    printf("tcp_number%d\tudp_number%d\ticmp_number%d\n",tcp_num,udp_num,icmp_num);
     tcp=(struct tcp_header*)(packet+14+20);
-    printf("源端口  :%d\n",ntohs(tcp->th_sport));
-    printf("目的端口:%d\n",ntohs(tcp->th_dport));
+    
+    printf("捕获时间 %s\n",strtime); 
+    printf("mac目的地址：%01x %02x %02x %02x %02x %02x\n",
+		    ethernet->mac_dhost[-1],
+		    ethernet->mac_dhost[0],
+		    ethernet->mac_dhost[1],
+		    ethernet->mac_dhost[2],
+		    ethernet->mac_dhost[3],
+		    ethernet->mac_dhost[4]);
+    printf("mac源地址:%01x %02x %02x %02x %02x %02x\n",
+		    ethernet->mac_shost[-1],
+		    ethernet->mac_shost[0],
+		    ethernet->mac_shost[1],
+		    ethernet->mac_shost[2],
+		    ethernet->mac_shost[3],
+		    ethernet->mac_shost[4]); 
+  
+    printf("源IP地址  ：%s\n",inet_ntoa(ip->ip_src));
+    printf("目的IP地址：%s\n",inet_ntoa(ip->ip_dst));
+
+
+    printf("源端口    :%d\n",ntohs(tcp->th_sport));
+    printf("目的端口  :%d\n",ntohs(tcp->th_dport));
 
     unsigned int size_tcp=TH_OFF(tcp)*4;
     payload=(u_char*)(packet+14+20+size_tcp);
    const u_char *ch=payload;
    const u_char *ch2=payload; 
-   unsigned int size_payload=ntohs(ip->ip_len)-(20+size_tcp);
+   unsigned int size_payload=header->len-(14+20+size_tcp);
    unsigned int offset=0;
-   for(unsigned int i=0;i<=size_payload;)
+   for(unsigned int i=0;i<size_payload;)//
    {
-	   for(unsigned int j=0;j<16;j++)
+	   for(unsigned int j=0;j<16&&j<=i;j++)
 	   {
 		   printf("%02x ",*ch);
-		   ch++;
-		   if(offset+j==size_payload)
+		   if((offset+j)>=size_payload)
 			   break;
+		   ch++;
 	   }
 	   printf("\t");
-	   for(unsigned int j=0;j<16;j++)
+	   for(unsigned int j=0;j<16&&j<=i;j++)
 	   {
 		   if(isprint(*ch2))
 		   	printf("%c",*ch2);
 		   else
 			   printf("0");
-		   ch2++;
-		   if(offset+j==size_payload)
+		   if((offset+j)>=size_payload)
 			   break;
+		   ch2++;
 	   }
+	   offset+=16;
 	   printf("\n");
 	   i+=16;
    }
