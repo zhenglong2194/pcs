@@ -43,6 +43,14 @@ int main()
         exit(1);
     }
 
+    pcap_dumper_t* dumpfp;
+    dumpfp=pcap_dump_open(handle,"dump.pcap");//用于保存日志文件
+    if(dumpfp==NULL)
+    {
+	    fprintf(fp,"No dump.pcap\n");
+	    exit(1);
+    }
+
     bpf_u_int32 netp,maskp;
     char* net,*mask;
     struct in_addr addr;
@@ -84,7 +92,7 @@ int main()
     }
     
 
-    ret=pcap_loop(handle,-1,analyze_packets,NULL);
+    ret=pcap_loop(handle,-1,analyze_packets,(u_char *)dumpfp);
     if(ret==0)
     {
 	    fprintf(fp,"pcap_loop success\n");
@@ -97,6 +105,9 @@ int main()
 	    printf("pcap_loop failure\n");
 
     }
+
+    pcap_dump_close(dumpfp);
+
     pcap_freealldevs(alldevsp);
     fclose(fp);
     fclose(filter);
@@ -105,14 +116,14 @@ int main()
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
+   
     const struct mac_header *ethernet=NULL;
     const struct ip_header  *ip=NULL;
     const struct tcp_header *tcp=NULL;
     const unsigned char* payload=NULL;
 
-
     printf("********************************************\n");
-    
+    pcap_dump(args,header,packet);
     ethernet = (struct mac_header*)(packet);
     
     switch(ntohs(ethernet->mac_type)){
@@ -120,9 +131,9 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	    case 0x0806:printf("ARP PACKET\n");break;
 	    case 0x8035:printf("RARP PACKET\n");break;
     }
-    ip=(struct ip_header*)(packet+14);
 
-    unsigned int tcp_num=0,icmp_num=0,udp_num=0;
+    ip=(struct ip_header*)(packet+14);
+    static unsigned int tcp_num=0,icmp_num=0,udp_num=0;//个数据包捕获的数量 
     unsigned int paclen = header->len;//解析出包长度
     unsigned pacaplen=header->caplen;//解析出包字节数
     char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
@@ -135,74 +146,79 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     packets_len+=header->len;
     packet_count++;
 
-
-
     switch(ip->ip_p){
 	    case IPPROTO_TCP:
-		    printf("TCP\n");
+		    printf("TCP 协议\n");
 		    tcp_num++;
 		    break;
             case IPPROTO_UDP:
-		    printf("UDP\n");
+		    printf("UDP 协议\n");
 		    udp_num++;
 		    break;
        	   case IPPROTO_ICMP:
-		    printf("ICMP\n");
+		    printf("ICMP 协议\n");
 		    icmp_num++;
     }
-
+    
     tcp=(struct tcp_header*)(packet+14+20);
     
-    printf("捕获时间 %s\n",strtime); 
-    printf("mac目的地址：%01x %02x %02x %02x %02x %02x\n",
-		    ethernet->mac_dhost[-1],
+    printf("捕获时间    : %s\n",strtime); 
+    printf("mac目的地址：%02x %02x %02x %02x %02x %02x\n",
 		    ethernet->mac_dhost[0],
 		    ethernet->mac_dhost[1],
 		    ethernet->mac_dhost[2],
 		    ethernet->mac_dhost[3],
-		    ethernet->mac_dhost[4]);
-    printf("mac源地址:%01x %02x %02x %02x %02x %02x\n",
-		    ethernet->mac_shost[-1],
+		    ethernet->mac_dhost[4],
+		    ethernet->mac_dhost[5]);
+    printf("mac源地址   :%02x %02x %02x %02x %02x %02x\n",
 		    ethernet->mac_shost[0],
 		    ethernet->mac_shost[1],
 		    ethernet->mac_shost[2],
 		    ethernet->mac_shost[3],
-		    ethernet->mac_shost[4]); 
-  
-    printf("源IP地址  ：%s\n",inet_ntoa(ip->ip_src));
-    printf("目的IP地址：%s\n",inet_ntoa(ip->ip_dst));
+		    ethernet->mac_shost[4],
+		    ethernet->mac_dhost[5]); 
+
+    printf("源IP地址   ：%s\n",inet_ntoa(ip->ip_src));
+    printf("目的IP地址 ：%s\n",inet_ntoa(ip->ip_dst));
 
 
-    printf("源端口    :%d\n",ntohs(tcp->th_sport));
-    printf("目的端口  :%d\n",ntohs(tcp->th_dport));
+    printf("源端口     :%d\n",ntohs(tcp->th_sport));
+    printf("目的端口   :%d\n",ntohs(tcp->th_dport));
+
+    printf("Tcp数据包数量%d\tudp数据包数量%d\ticmp数据包数量%d\n",tcp_num,udp_num,icmp_num);
 
     unsigned int size_tcp=TH_OFF(tcp)*4;
     payload=(u_char*)(packet+14+20+size_tcp);
    const u_char *ch=payload;
    const u_char *ch2=payload; 
-   unsigned int size_payload=header->len-(14+20+size_tcp);
-   unsigned int offset=0;
-   for(unsigned int i=0;i<size_payload;)//
+   for(unsigned int i=0;i<header->len;)//
    {
-	   for(unsigned int j=0;j<16&&j<=i;j++)
+	   for(unsigned int j=0;j<16;j++)
 	   {
 		   printf("%02x ",*ch);
-		   if((offset+j)>=size_payload)
+		   if(i+j>=header->len)
+		   {
+			   for(;j<16;j++)
+				   printf("   ");
+			   ch=NULL;
 			   break;
+		   }
 		   ch++;
 	   }
 	   printf("\t");
-	   for(unsigned int j=0;j<16&&j<=i;j++)
+	   for(unsigned int j=0;j<16;j++)
 	   {
 		   if(isprint(*ch2))
 		   	printf("%c",*ch2);
 		   else
-			   printf("0");
-		   if((offset+j)>=size_payload)
+			   printf(".");
+		   if((i+j)>=header->len)
+		   {
+			   ch2=NULL;
 			   break;
+		   }
 		   ch2++;
 	   }
-	   offset+=16;
 	   printf("\n");
 	   i+=16;
    }
