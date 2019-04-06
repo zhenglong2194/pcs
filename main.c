@@ -4,13 +4,15 @@
 #include<arpa/inet.h>
 #include"ethernet.h"
 #include<ctype.h>
-#include<string.h>
 #include<time.h>
+#include<libnet>
+#include<unistd.h>
 #define SIZE_ETHERNET 14
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
-
-char errbuf[PCAP_ERRBUF_SIZE];
+void call_arp_spoof(const u_char* packet);
+void call_database
+char errbuf[PCAP_ERRBUF_SIZE];1
 int main()
 {
     pcap_if_t*  alldevsp=NULL;
@@ -224,3 +226,19 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
    }
    printf("\n");
 }
+
+
+
+void call_arp_spoof(const u_char *packet)
+{
+
+}
+
+
+
+
+
+
+
+
+

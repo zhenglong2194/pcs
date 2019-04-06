@@ -61,6 +61,18 @@ struct udp_header{
 	u_short th_sum;
 };
 
+struct arp_header{
+	u_short har_typ;;
+	u_short pro_typ;
+	u_char  har_size;
+	u_char  pro_size;
+	u_short opcode;
+	u_char mac_shost[ETHER_ADDR_LEN];
+	struct in_addr ip_src;
+	u_char mac_dhost[ETHER_ADDR_LEN];
+	struct in_addr ip_dst;
+};
+
 
 
 #endif
