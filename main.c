@@ -5,21 +5,23 @@
 #include"ethernet.h"
 #include<ctype.h>
 #include<time.h>
-#include<libnet>
+//#include<libnet>
 #include<unistd.h>
+#include<sqlite3.h>
 #define SIZE_ETHERNET 14
+#define PACKETS_NUMBERS 50
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
 void call_arp_spoof(const u_char* packet);
-void call_database
-char errbuf[PCAP_ERRBUF_SIZE];1
+void insert_databases();
+char errbuf[PCAP_ERRBUF_SIZE];
 int main()
 {
     pcap_if_t*  alldevsp=NULL;
     FILE* fp=fopen("log","at+");//日志文件
     FILE* filter=fopen("filter","r");//过滤规则文件
     int ret=0;
-	
+
     char* device=pcap_lookupdev(errbuf);//device是设备名
     if(device)
     {
@@ -94,7 +96,7 @@ int main()
     }
     
 
-    ret=pcap_loop(handle,-1,analyze_packets,(u_char *)dumpfp);
+    ret=pcap_loop(handle,PACKETS_NUMBERS,analyze_packets,(u_char *)dumpfp);
     if(ret==0)
     {
 	    fprintf(fp,"pcap_loop success\n");
@@ -113,6 +115,7 @@ int main()
     pcap_freealldevs(alldevsp);
     fclose(fp);
     fclose(filter);
+    printf("CODE OVER\n");
     return 0;
 }
 
@@ -123,6 +126,17 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     const struct ip_header  *ip=NULL;
     const struct tcp_header *tcp=NULL;
     const unsigned char* payload=NULL;
+    sqlite3* db;
+    char* sql;
+    int ret;
+
+    ret = sqlite3_open("packet.db",&db);
+    if(ret)
+    {
+	 //   fprintf("Can not open databases %s\n",sqlite3_errmsg(db));
+	    exit(1);
+    }
+
 
     printf("********************************************\n");
     pcap_dump(args,header,packet);
@@ -140,7 +154,6 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     unsigned pacaplen=header->caplen;//解析出包字节数
     char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
     static unsigned int count=0;
-    count++;//统计数据包总数
     static double packet_count=0;//每秒数据包数量
     static unsigned int packets_len=0;//总流量
     static unsigned int tick_count=0;//时间起点
@@ -224,18 +237,35 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	   printf("\n");
 	   i+=16;
    }
+   sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
+   count,
+   header->len,
+   header->caplen,
+   strtime,ntohs(tcp->th_sport),
+   ntohs(tcp->th_dport),
+   inet_ntoa(ip->ip_src),
+   inet_ntoa(ip->ip_dst),
+   ip->ip_p);
+   ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
+   if(ret != SQLITE_OK){
+	   fprintf(stderr, "SQL error: %s\n",errbuf);
+	   sqlite3_free(errbuf);
+	   exit(1);
+   }
+   else
+   {
+	   fprintf(stdout, "Operation done successfully\n");
+   }
+
+   count++;
+   sqlite3_close(db);
    printf("\n");
 }
-
-
 
 void call_arp_spoof(const u_char *packet)
 {
 
 }
-
-
-
 
 
 
