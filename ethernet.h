@@ -73,6 +73,8 @@ struct arp_header{
 	struct in_addr ip_dst;
 };
 
+struct ip_mac{
 
+};
 
 #endif

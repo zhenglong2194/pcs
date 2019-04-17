@@ -177,7 +177,8 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     
     tcp=(struct tcp_header*)(packet+14+20);
     
-    printf("捕获时间    : %s\n",strtime); 
+    printf("捕获时间    : %s\n",strtime);
+   /* 
     printf("mac目的地址：%02x %02x %02x %02x %02x %02x\n",
 		    ethernet->mac_dhost[0],
 		    ethernet->mac_dhost[1],
@@ -192,7 +193,8 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 		    ethernet->mac_shost[3],
 		    ethernet->mac_shost[4],
 		    ethernet->mac_dhost[5]); 
-
+*/
+    printf("MAC 目的地址%s\n",ethernet->mac_dhost);
     printf("源IP地址   ：%s\n",inet_ntoa(ip->ip_src));
     printf("目的IP地址 ：%s\n",inet_ntoa(ip->ip_dst));
 
@@ -277,7 +279,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 //        char error[LIBNET_ERRBUF_SIZE];        /* 出错信息 */
 //        libnet_ptag_t arp_proto_tag, eth_proto_tag;
 //
-//        /* 把目的IP地址字符串转化成网序 */
+//        /* 把目的IP地址字符串转化成网络序 */
 //        dst_ip = libnet_name2addr4(handle, dst_ip_str, LIBNET_RESOLVE);
 //        /* 把源IP地址字符串转化成网络序 */
 //        src_ip = libnet_name2addr4(handle, src_ip_str, LIBNET_RESOLVE);
