@@ -30,7 +30,7 @@ struct userinfo users[]={
 	{"xl","xl"},
 	{" "," "}
 };
-
+/*
 int find_name(const char* name)
 {
 	int i;
@@ -46,6 +46,7 @@ int find_name(const char* name)
 	}
 	return -1;
 }
+*/
 
 void send_data(int conn_fd,const char * string)
 {
@@ -132,6 +133,9 @@ int main()
 					if(strcmp(users[name_num].password,recv_buf)==0)
 					{
 						send_data(conn_fd,"y\n");
+						send_data(conn_fd,"Welcome login my tcp server\n");
+						printf("%s login\n",users[name_num].username);
+						break;
 					}
 					else
 						send_data(conn_fd,"n\n");
@@ -146,6 +150,3 @@ int main()
 	}
 	return 0;
 }
-
-
-
