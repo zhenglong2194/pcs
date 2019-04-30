@@ -22,16 +22,18 @@
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet);
 void call_arp_spoof(const u_char* packet);
 int  send_arp(u_int8_t* dst_ip_str,char* device);
+int  send_arp_reply(char* device,u_int8_t* dst_ip_str,u_int8_t dst_mac[6]);
 void insert_databases();
 char errbuf[PCAP_ERRBUF_SIZE];
 char* get_ip(char* device);//得到主机IP MAC
 int get_mac(char* device,u_int8_t* src_mac);
-
+struct ip_mac ip_form[MAX_IP_NUM];
+int ip_num;
+char* device;
 int main()
 {
     pcap_if_t*  alldevsp=NULL;
-    int ip_num=0;
-    struct ip_mac ip_form[MAX_IP_NUM];
+    ip_num=0;
     FILE* fp_ip=fopen("ip_form","r");
     FILE* fp=fopen("log","at+");//日志文件
     FILE* filter=fopen("filter","r");//过滤规则文件
@@ -47,7 +49,7 @@ int main()
     }
     ip_num--;
 
-    char * device=pcap_lookupdev(errbuf);//device是设备名
+    device=pcap_lookupdev(errbuf);//device是设备名
     if(device)
     {
 	    fprintf(fp,"name is %s\n",device);
@@ -202,6 +204,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     sqlite3* db;
     char* sql;
     int ret;
+    int f=0;
 
     ret = sqlite3_open("packet.db",&db);
     if(ret)
@@ -216,7 +219,13 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     
     switch(ntohs(ethernet->mac_type)){
 	    case 0x0800:printf("IP PACKET\n");break;
-	    case 0x0806:printf("ARP PACKET\n");break;
+	    case 0x0806:printf("ARP PACKET\n");
+			for(int i=0;i<ip_num;i++)
+			{
+			//	send_arp_reply(device,(u_int8_t*)ip_form[i].ip,(u_int8_t*)ip_form[i].mac);
+			        if(strcmp(ip_form[i].ip,))
+			}
+			break;
 	    case 0x8035:printf("RARP PACKET\n");break;
     }
 
@@ -271,7 +280,13 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 
     printf("源端口     :%d\n",ntohs(tcp->th_sport));
     printf("目的端口   :%d\n",ntohs(tcp->th_dport));
-
+    if(f)
+    for(int i=0;i<ip_num;i++)
+    {
+			//	send_arp_reply(device,(u_int8_t*)ip_form[i].ip,(u_int8_t*)ip_form[i].mac);
+			        if(strcmp(ip_form[i].ip,))
+    }
+    f=0;
     printf("Tcp数据包数量%d\tudp数据包数量%d\ticmp数据包数量%d\n",tcp_num,udp_num,icmp_num);
 
     
@@ -402,9 +417,9 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
     }
 
     /* 把目的IP地址字符串转化成网络序 */
-    dst_ip = libnet_name2addr4(handle, dst_ip_str, LIBNET_RESOLVE);
+    dst_ip = libnet_name2addr4(handle,(char*)dst_ip_str, LIBNET_RESOLVE);
     /* 把源IP地址字符串转化成网络序 */
-    src_ip = libnet_name2addr4(handle, src_ip_str, LIBNET_RESOLVE);
+    src_ip = libnet_name2addr4(handle,(char*)src_ip_str, LIBNET_RESOLVE);
 
     /* 构造arp协议块 */
     arp_proto_tag = libnet_build_arp(
@@ -445,9 +460,75 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
     }
 
     packet_size = libnet_write(handle);    /* 发送已经构造的数据包*/
-
+    if(packet_size);
     libnet_destroy(handle);                /* 释放句柄 */
-
-	return 0;
-	
+    return 0;	
 }
+
+int send_arp_reply(char* device,u_int8_t* dst_ip_str,u_int8_t dst_mac[6])
+{
+	libnet_t* handle;
+	int packet_size;
+	u_int8_t src_mac[6];
+	u_int8_t* src_ip_str=(u_int8_t*)get_ip(device);
+	get_mac(device,src_mac);
+	u_int32_t dst_ip,src_ip;
+	libnet_ptag_t arp_proto_tag,eth_proto_tag;
+	if(dst_ip==-1||src_ip==-1)
+	{
+		printf("ip address convert error\n");
+		return -1;
+	}
+	if((handle=libnet_init(LIBNET_LINK_ADV,device,errbuf))==NULL)
+	{
+		printf("libnet_init:errbuf %s\n",errbuf);
+		return -1;
+	}
+	dst_ip=libnet_name2addr4(handle,(char*)dst_ip_str,LIBNET_RESOLVE);
+	src_ip=libnet_name2addr4(handle,(char*)src_ip_str,LIBNET_RESOLVE);
+	arp_proto_tag=libnet_build_arp(
+			ARPHRD_ETHER,
+			ETHERTYPE_IP,
+			6,
+			4,
+			ARPOP_REPLY,
+			src_mac,
+			(u_int8_t*)&src_ip,
+			dst_mac,
+			(u_int8_t*)&dst_ip,
+			NULL,
+			0,
+			handle,
+			0);
+	if(arp_proto_tag==-1)
+	{
+		printf("build IP failure\n");
+		return -1;
+	}
+	eth_proto_tag=libnet_build_ethernet(
+			dst_mac,
+			src_mac,
+			ETHERTYPE_ARP,
+			NULL,
+			0,
+			handle,
+			0
+			);
+	if(eth_proto_tag==-1)
+	{
+		printf("build eth_header failure\n");
+		return -1;
+	}
+	packet_size=libnet_write(handle);
+        if(packet_size);
+	libnet_destroy(handle);
+	return 0;
+}
+
+
+
+
+
+
+
+
