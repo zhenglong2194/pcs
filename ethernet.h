@@ -68,9 +68,9 @@ struct arp_header{
 	u_char  pro_size;
 	u_short opcode;
 	u_char mac_shost[ETHER_ADDR_LEN];
-	struct in_addr ip_src;
+	u_char  ip_src[4];
 	u_char mac_dhost[ETHER_ADDR_LEN];
-	struct in_addr ip_dst;
+	u_char  ip_dst[4];
 };
 
 struct ip_mac{
