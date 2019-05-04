@@ -75,7 +75,7 @@ struct arp_header{
 
 struct ip_mac{
 	char ip[17];
-	char mac[18];
+	unsigned char mac[6];
 };
 
 #endif
