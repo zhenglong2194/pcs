@@ -40,3 +40,6 @@ pcap_loop success
 name is wlo1
 pcap_open_live success
 call pcap_lookupnet success
+name is wlo1
+pcap_open_live success
+call pcap_lookupnet success

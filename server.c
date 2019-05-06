@@ -7,58 +7,23 @@
 #include<netinet/in.h>
 #include<arpa/inet.h>
 #include<errno.h>
+#include<sys/stat.h>
+#include<fcntl.h>
 #include"my_recv.h"
 
 #define SERV_PORT 4507
 #define LISTENQ   12
-
-#define INVALID_USERINFO  'n'
-#define VALOD_USERINFO    'y'
-
-#define USERNAME 0
-#define PASSWORD 1
-
-struct userinfo{
-	char username[32];
-	char password[32];
+#define IVAILDE_VALUE 0
+#define VAILDE_VALUE 1
+struct file_name{
+	char file[15];
 };
-
-struct userinfo users[]={
-	{"linux","unix"},
-	{"4507","4508"},
-	{"clh","clh"},
-	{"xl","xl"},
-	{" "," "}
-};
-/*
-int find_name(const char* name)
-{
-	int i;
-	if(name==NULL)
-	{
-		printf("in find_name,NULL pointer\n");
-		return -2;
-	}
-	for(i=0;users[i].username[0]!=' ';i++)
-	{
-		if(strcmp(users[i].username,name)==0)
-			return i;
-	}
-	return -1;
-}
-*/
-
-void send_data(int conn_fd,const char * string)
-{
-	if(send(conn_fd,string,strlen(string),0)<0)
-		my_err("send",__LINE__);
-}
-
+struct file_name filename[]={"dump.pcap","filter","log","packet.db","ip_form","testfile"};
 int main()
 {
 	int sock_fd,conn_fd;
 	int optval;
-	int flag_recv = USERNAME;
+	int flags=IVAILDE_VALUE;
 	int ret;
 	int name_num;
 	pid_t pid;
@@ -66,12 +31,11 @@ int main()
 	struct sockaddr_in cli_addr,serv_addr;
 	char recv_buf[128];
 
-	sock_fd=socket(AF_INET,SOCK_STREAM,0);
+	sock_fd=socket(AF_INET,SOCK_STREAM,0);//创建套接字
 	if(sock_fd<0)
 	{
 		my_err("socket",__LINE__);
 	}
-
 	optval=1;
 	if(setsockopt(sock_fd,SOL_SOCKET,SO_REUSEADDR,(void*)&optval,sizeof(int))<0)
 	{
@@ -112,33 +76,50 @@ int main()
 					exit(1);
 				}
 				recv_buf[ret-1]='\0';
-				if(flag_recv==USERNAME)
+				char order;
+				char name[15];
+				order=recv_buf[ret-2];
+				strncpy(name,recv_buf,ret-3);
+				name[ret-2]='\0';
+				printf("name %s\n%ld\n",name,strlen(name));
+				for(int i=0;i<6;i++)
 				{
-					name_num = find_name(recv_buf);
-					switch(name_num)
+					if(strncmp(name,filename[i].file,strlen(name))==0)
+						flags=VAILDE_VALUE;
+				}
+				if(flags==0)
+				{
+					printf("此文件不存在\n");
+					break;
+				}
+		                if(order=='s')
+				{
+					long int ret;
+					FILE* fp=NULL;
+					unsigned char buffer[2048];
+					int FILE_RD;
+					FILE_RD=open(name,'r');
+					printf("%s\n",name);
+					while(1)
 					{
-						case -1:
-							send_data(conn_fd,"n\n");
-							break;
-						case -2:
-							exit(1);
-							break;
-						default:
-							send_data(conn_fd,"y\n");
-							flag_recv=PASSWORD;
+						if(ret=read(FILE_RD,buffer,sizeof(buffer)-1))
+						{
+							printf("%ld\n",ret);
+							send(conn_fd,buffer,ret,0);
+						}
+						else
 							break;
 					}
-				}else if(flag_recv==PASSWORD)
+					printf("fprintf file over\n");
+					close(FILE_RD);
+					break;
+				}
+				if(order=='d')
+					remove(name);
+				if(order=='c')
 				{
-					if(strcmp(users[name_num].password,recv_buf)==0)
-					{
-						send_data(conn_fd,"y\n");
-						send_data(conn_fd,"Welcome login my tcp server\n");
-						printf("%s login\n",users[name_num].username);
-						break;
-					}
-					else
-						send_data(conn_fd,"n\n");
+					int FILE_C=open(name,O_CREAT|O_EXCL,S_IRUSR|S_IWUSR);
+					close(FILE_C);
 				}
 			}
 			close(sock_fd);
