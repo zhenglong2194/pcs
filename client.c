@@ -116,7 +116,7 @@ int main(int argc,char ** argv)
 	input_userinfo(conn_fd,"send");
 	int FILE_WT;
 	int num;
-	int ii;
+//	int ii;
 	FILE_WT=open(name,O_RDWR|O_CREAT);
 	unsigned char buffer[2048];
 	memset(buffer,'\0',sizeof(buffer));
@@ -136,7 +136,17 @@ int main(int argc,char ** argv)
 	if(order=='t')
 	{
 		printf("update file %s",name);
-
+		long int ret;
+		int FILE_RD;
+		FILE_RD=open(name,'r');
+		while(1)
+		{
+			if(ret=read(FILE_RD,buffer,sizeof(buffer)-1))
+				send(conn_fd,buffer,ret,0);
+			else
+				break;
+		}
+		close(FILE_RD);
 	}
 	printf("COPY OVER\n");
 	printf("\n");

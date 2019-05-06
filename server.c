@@ -95,7 +95,6 @@ int main()
 		                if(order=='s')
 				{
 					long int ret;
-					FILE* fp=NULL;
 					unsigned char buffer[2048];
 					int FILE_RD;
 					FILE_RD=open(name,'r');
@@ -115,11 +114,30 @@ int main()
 					break;
 				}
 				if(order=='d')
+				{
 					remove(name);
+					break;
+				}
 				if(order=='c')
 				{
 					int FILE_C=open(name,O_CREAT|O_EXCL,S_IRUSR|S_IWUSR);
 					close(FILE_C);
+					break;
+				}
+				if(order=='t')
+				{
+					int FILE_WT;
+					int num;
+					FILE_WT=open(name,O_RDWR|O_CREAT);
+					unsigned char buffer[2048];
+					memset(buffer,'\0',sizeof(buffer));
+					while(recv(conn_fd,buffer,sizeof(buffer)-1,0)>0)
+					{
+						for(num=sizeof(buffer)-1;buffer[num]=='\0'&&num>0;num--);
+						write(FILE_WT,buffer,num);
+						memset(buffer,'\0',sizeof(buffer));
+					}
+					break;
 				}
 			}
 			close(sock_fd);
