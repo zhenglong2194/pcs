@@ -213,10 +213,8 @@ int main()
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
     struct mac_header *ethernet=NULL;
-    struct ip_header  *ip=NULL;
-    struct tcp_header *tcp=NULL;
     struct arp_header *arp=NULL;
-    static unsigned int tcp_num=0,icmp_num=0,udp_num=0;//个数据包捕获的数量
+    static unsigned int tcp_num=0,icmp_num=0,udp_num=0i,igmp_num=0;//个数据包捕获的数量
     unsigned int paclen = header->len;//解析出包长度
     unsigned int pacaplen=header->caplen;//解析出包实际长度
     char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
@@ -243,7 +241,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     printf("捕获接口Interface Id:     :%s\n",device);
     //  printf("封装类型Encapsulation type:ethernet(1)\n");
     printf("捕获时间Arrival time      :%s",strtime);
-    printf("目的mac地址Destination    :%02x %02x %02x %02x %02x %02x",
+    printf("目的mac地址Destination    :%02x %02x %02x %02x %02x %02x\n",
            ethernet->mac_dhost[0],
            ethernet->mac_dhost[1],
            ethernet->mac_dhost[2],
@@ -277,7 +275,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         printf("PPP PACKET(0x880B)\n");
         break;
     case 0x8863:
-        printf("PPPoE Discovery Stage(0x8864)");
+        printf("PPPoE Discovery Stage(0x8864)\n");
         break;
     case 0x8864:
         printf("PPPoE Session Stage(0x8864)\n");
@@ -289,6 +287,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 
     if(ntohs(ethernet->mac_type)==0x0800)//IPv4数据包，应当能提供转发操作
     {
+        struct ip_header  *ip=NULL;
         ip=(struct ip_header*)(packet+14);//以太网帧长度14
 	printf("版本Version              :%d\n",(ip->ip_vhl>>4));
 	printf("首部长度Header Length    :%dbytes(%d)\n",IP_HL(ip)*4,IP_HL(ip));
@@ -297,18 +296,19 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	printf("标识Identification       :%02x(%d)\n",ntohs(ip->ip_id),ntohs(ip->ip_id));
         if(ip->ip_off&IP_RF)
 	{
-		printf("标志Flags                :保留位Reserved bit\n");
+		printf("标志Flags    :保留位Reserved bit\n");
 	}
 	else if(ip->ip_off&IP_DF)
 	{
-		printf("标志Flags                :不分片Don't fragment\n");
+		printf("标志Flag     :不分片Don't fragment\n");
 	}
 	else if(ip->ip_off&IP_MF)
 	{
-		printf("标志Flags                :更多分片More fragments\n");
+		printf("标志Flags    :更多分片More fragments\n");
 	}
-	printf("片偏移Fragment offset            :0x%02x|0x1fff",noohs(ip->ip_off));
-
+	printf("片偏移Fragment offset:0x%02x|0x1fff\n",ntohs(ip->ip_off));
+	printf("生存时间Time of live :%d\n",ip->ip_ttl);
+	printf("协议类型Protocol :");
 	switch(ip->ip_p){
         case IPPROTO_TCP:
             printf("TCP 协议\n");
@@ -321,11 +321,80 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         case IPPROTO_ICMP:
             printf("ICMP 协议\n");
             icmp_num++;
+	    break;
+	case IPPROTO_IGMP:
+	    printf("IGMP 协议\n");
+	    igmp_num++;
+	    break;
         }//此处应当将TCP UDP ICMP分离//此处先仅仅分离tcp
+	printf("首部校验和  :0x%02x\n",ntohs(ip->ip_sum));
         printf("源IP地址   ：%s\n",inet_ntoa(ip->ip_src));
         printf("目的IP地址 ：%s\n",inet_ntoa(ip->ip_dst));
-        printf("Tcp数据包数量%d\tudp数据包数量%d\ticmp数据包数量%d\n",tcp_num,udp_num,icmp_num);
-        if((strcmp(inet_ntoa(ip->ip_dst),"192.168.1.28")!=0)&&(ethernet->mac_dhost[0]!=0xdc))//尝试转发数据包	目的ip与目的mac不一致时发送
+        if(ip->ip_p==IPPROTO_TCP)//tcp数据包
+        {
+            struct tcp_header *tcp=NULL;
+            tcp=(struct tcp_header*)(packet+14+IP_HL(ip)*4);
+	    printf("源端口SourcePort       :%d\n",ntohs(tcp->th_sport));
+	    printf("目的端口DestinationPort:%d\n",ntohs(tcp->th_dport));
+	    printf("序号Sequence number    :%d\n",ntohs(tcp->th_seq));
+	    printf("确认号Acknowledgment number:%d\n",ntohs(tcp->th_ack));
+	    printf("头部长度HeaderLength   :%dbytes(%d)\n",TH_OFF(tcp)*4,TH_OFF(tcp));
+	    if(TH_FIN&tcp->th_flags)
+		    printf("FIN\n");
+	    else if(TH_SYN&tcp->th_flags)
+		    printf("SYN\n");
+	    else if(TH_RST&tcp->th_flags)
+		    printf("REST\n");
+	    else if(TH_PUSH&tcp->th_flags)
+		    printf("PUSH\n");
+	    else if(TH_ACK&tcp->th_flags)
+		    printf("ACKNOWLEDGMENT\n");
+	    else if(TH_URG&tcp->th_flags)
+		    printf("URGENT\n");
+	    else if(TH_ECE&tcp->th_flags)
+		    printf("ECN-Echo\n");
+	    else if(TH_CWR&tcp->th_flags)
+		    printf("CWR\n");
+	    else if(TH_FLAGS)
+		    printf("Nonce\n");
+	    printf("窗口大小Windowssizevalue:%d\n",ntohs(tcp->th_win));
+	    printf("校验和ChwckSum          :%d\n",ntohs(tcp->th_sum));
+	    printf("紧急指针Uegment pointer :%d\n",ntohs(tcp->th_urp));
+            unsigned int size_tcp=TH_OFF(tcp)*4;
+            payload=(u_char*)(packet+14+20+size_tcp);
+	    if(payload!=NULL);//tcp的选项字段 //数据库重新设计
+    	    sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
+  			    count,
+                            header->len,
+			    header->caplen,
+			    strtime,
+			    ntohs(tcp->th_sport),
+			    ntohs(tcp->th_dport),
+			    inet_ntoa(ip->ip_src),
+			    inet_ntoa(ip->ip_dst),
+			    ip->ip_p);
+    	    ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
+	    if(ret != SQLITE_OK)
+    	    {
+	    	    fprintf(stderr, "SQL error: %s\n",errbuf);
+            	    sqlite3_free(errbuf);
+                    exit(1);
+            }
+        }
+        if(ip->ip_p==IPPROTO_UDP)
+        {
+	    struct udp_header* udp=NULL;
+            udp=(struct udp_header*)(packet+14+IP_HL(ip)*4);
+	    printf("源端口");
+        }
+        if(ip->ip_p==IPPROTO_ICMP)
+        {
+        }
+	if(ip->ip_p==IPPROTO_IGMP)
+	{
+	}
+	/*
+	if((strcmp(inet_ntoa(ip->ip_dst),"192.168.1.28")!=0)&&(ethernet->mac_dhost[0]!=0xdc))//尝试转发数据包	目的ip与目的mac不一致时发送
         {
             printf("目的IP地址与本机IP地址不相等\n");
             for(int i=0; i<ip_num; i++)
@@ -336,7 +405,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
                     for(int j=0; j<6; j++)
                     {
                         ethernet->mac_dhost[j]=ip_form[i].mac[j];
-                        printf("ip_form");//****************************
+                        printf("ip_form");****************************
                     }
                     if(pcap_inject(handle,packet,header->len)==PCAP_ERROR)
                     {
@@ -344,42 +413,9 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
                     }
                     break;
                 }
-            }
+        `    }
         }
-        printf("转发数据包结束\n");
-        if(ip->ip_p==IPPROTO_TCP)//tcp数据包
-        {
-            tcp=(struct tcp_header*)(packet+14+20);
-            unsigned int size_tcp=TH_OFF(tcp)*4;
-            payload=(u_char*)(packet+14+20+size_tcp);
-        }
-        if(ip->ip_p==IPPROTO_UDP)
-        {
-        }
-        if(ip->ip_p==IPPROTO_ICMP)
-        {
-        }
-        sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
-                              count,
-                              header->len,
-                              header->caplen,
-                              strtime,ntohs(tcp->th_sport),
-                              ntohs(tcp->th_dport),
-                              inet_ntoa(ip->ip_src),
-                              inet_ntoa(ip->ip_dst),
-                              ip->ip_p);
-        ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
-        if(ret != SQLITE_OK)
-        {
-            fprintf(stderr, "SQL error: %s\n",errbuf);
-            sqlite3_free(errbuf);
-            exit(1);
-        }
-        else
-        {
-            fprintf(stdout, "Operation done successfully\n");
-        }
-
+        printf("转发数据包结束\n");*/
     }
     if(ntohs(ethernet->mac_type)==0x0806)
     {
