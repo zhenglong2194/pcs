@@ -27,8 +27,8 @@ struct ip_header{
 	struct in_addr ip_src,ip_dst;
 };
 
-#define IP_HL(ip) (((ip)->ip_vhl)&0x0f)
-#define IP_V(ip)  (((ip)->ip_vhl)>>4)
+#define IP_HL(ip) (((ip)->ip_vhl)&0x0f)//低四位长度
+#define IP_V(ip)  (((ip)->ip_vhl)>>4)//高四位版本号
 
 typedef u_int tcp_seq;
 
