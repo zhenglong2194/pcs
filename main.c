@@ -213,15 +213,18 @@ int main()
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
     struct mac_header *ethernet=NULL;
-    struct arp_header *arp=NULL;
     static unsigned int tcp_num=0,icmp_num=0,udp_num=0i,igmp_num=0;//个数据包捕获的数量
-    unsigned int paclen = header->len;//解析出包长度
-    unsigned int pacaplen=header->caplen;//解析出包实际长度
-    char* strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
-    static unsigned int count=0;
+    static unsigned int count=0;//总的抓包数 当前值也代表帧序号
+    char*    strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
+    static struct time_packet time={0,0};
+    static long int pre_se=0;
+    static long int pre_us=0;
+    if(count==1)//记录第一个数据包时间
+    {
+	    time.se=header->ts.tv_sec;
+	    time.us=header->ts.tv_usec;
+    }
     static double packet_count=0;//每秒数据包数量
-    static unsigned int packets_len=0;//总流量
-    static unsigned int tick_count=0;//时间起点
     static double speed=0.0;//流量传输速度
     unsigned char* payload=NULL;
     sqlite3* db;
@@ -235,12 +238,34 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         exit(1);
     }
     packet_count++;
-    printf("*****************************************************************************************\n");
+    printf("*****************************************************************************\n");
     pcap_dump(args,header,packet);
     ethernet = (struct mac_header*)(packet);
     printf("捕获接口Interface Id:     :%s\n",device);
     //  printf("封装类型Encapsulation type:ethernet(1)\n");
     printf("捕获时间Arrival time      :%s",strtime);
+    printf("新纪元时间Epoch Time      :%ld.%06ld seconds\n",header->ts.tv_sec,header->ts.tv_usec);
+    long int temp=header->ts.tv_usec-pre_us;
+    long int temp1=0;
+    if(header->ts.tv_usec-pre_us<0)
+    {
+	    temp=1000000+header->ts.tv_usec-pre_us;
+	    temp1=1;
+    }
+    printf("距离上一个包的时间        :%ld.%06ld\n",header->ts.tv_sec-pre_se-temp1,temp);
+    temp=header->ts.tv_usec-time.us;
+    temp1=0;
+    if(header->ts.tv_usec-time.us<0)
+    {
+	    temp=1000000+header->ts.tv_usec-time.us;
+    }
+    printf("距离第一个包时间          :%ld.%06ld\n",header->ts.tv_sec-time.se-temp1,temp);
+    pre_se=header->ts.tv_sec;//当前时间保存
+    pre_us=header->ts.tv_usec;
+    printf("帧序号FrameNumber         :%d\n",count);
+    printf("帧大小  (FrameLength)     :%dbytes(%dbit)\n",header->len,header->len*8);
+    printf("实际大小(CaptureLength)   :%dbytes(%dbit)\n",header->caplen,header->caplen*8);
+    printf("---------------------------------------------------------------------------\n");
     printf("目的mac地址Destination    :%02x %02x %02x %02x %02x %02x\n",
            ethernet->mac_dhost[0],
            ethernet->mac_dhost[1],
@@ -284,7 +309,6 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         printf("SNMP PACKET(0x814C)\n");
         break;
     }//暂时先显示这些数据包
-
     if(ntohs(ethernet->mac_type)==0x0800)//IPv4数据包，应当能提供转发操作
     {
         struct ip_header  *ip=NULL;
@@ -330,6 +354,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	printf("首部校验和  :0x%02x\n",ntohs(ip->ip_sum));
         printf("源IP地址   ：%s\n",inet_ntoa(ip->ip_src));
         printf("目的IP地址 ：%s\n",inet_ntoa(ip->ip_dst));
+        printf("---------------------------------------------------------------------------\n");
         if(ip->ip_p==IPPROTO_TCP)//tcp数据包
         {
             struct tcp_header *tcp=NULL;
@@ -361,7 +386,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	    printf("校验和ChwckSum          :%d\n",ntohs(tcp->th_sum));
 	    printf("紧急指针Uegment pointer :%d\n",ntohs(tcp->th_urp));
             unsigned int size_tcp=TH_OFF(tcp)*4;
-            payload=(u_char*)(packet+14+20+size_tcp);
+            payload=(u_char*)(packet+14+IP_HL(ip)*4+size_tcp);
 	    if(payload!=NULL);//tcp的选项字段 //数据库重新设计
     	    sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
   			    count,
@@ -385,13 +410,198 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         {
 	    struct udp_header* udp=NULL;
             udp=(struct udp_header*)(packet+14+IP_HL(ip)*4);
-	    printf("源端口");
+	    printf("源端口SourePort        :%d",ntohs(udp->th_sport));
+	    printf("目的端口DestinationPort:%d",ntohs(udp->th_dport));
+	    printf("长度Length             :%d\n",ntohs(udp->th_len));
+	    printf("校验和CheckNum         :%d\n",ntohs(udp->th_sum));
+	    payload=(u_char*)(packet+14+IP_HL(ip)*4+ntohs(udp->th_len));
+	    if(payload!=NULL);//暂时无用 保留
         }
-        if(ip->ip_p==IPPROTO_ICMP)
+        if(ip->ip_p==IPPROTO_ICMP)//ICMP报文
         {
+		struct icmp_header* icmp=NULL;
+		icmp=(struct icmp_header*)(packet+14+IP_HL(ip)*4);
+		if(ntohs(icmp->ic_typ)==0)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("回显应答(Ping应答)Echo Reply\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==3)
+		{
+			switch(ntohs(icmp->ic_cod))
+			{
+				case 0:
+					printf("网络不可达NetworkUnreachable\n");
+					break;
+				case 1:
+					printf("主机不可达Host Unreachable\n");
+					break;
+				case 2:
+					printf("协议不可达Protocol Unreachable\n");
+					break;
+				case 3:
+					printf("端口不可达Port Unreachable\n");
+					break;
+				case 4:
+					printf("需要进行分片但设置不分片比特\nFragmentation needed but no frag. bit set\n");
+					break;
+				case 5:
+					printf("源站选路失败Source routing failed\n");
+					break;
+				case 6:
+					printf("目的网络未知Destination network unknown\n");
+					break;
+				case 7:
+					printf("目的主机未知Destination host unknown\n");
+					break;
+				case 8:
+					printf("源主机被隔离(作废)Source host isolated (obsolete)\n");
+				       break;
+				case 9:
+				       printf("目的网络被强制禁止Destination network administratively prohibited\n");
+				       break;
+				case 10:
+				       printf("目的主机被强制禁止\nDestination host administratively prohibited\n");
+				       break;
+				case 11:
+				       printf("由于服务类型TOS，网络不可达\nNetwork unreachable for TOS\n");
+				       break;
+				case 12:
+				       printf("由于服务类型TOS，主机不可达\nHost unreachable for TOS\n");
+				       break;
+				case 13:
+				       printf("由于过滤，通信被强制禁止\nCommunication administratively prohibited by filtering\n");
+				       break;
+				case 14:
+				       printf("主机越权Host precedence violation\n");
+				       break;
+				case 15:
+				       printf("优先中止生效Precedence cutoff in effect\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==4)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("源端被关闭（基本流控制）Source quench\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==5)
+		{
+			switch(ntohs(icmp->ic_cod))
+			{
+				case 0:
+					printf("对网络重定向Redirect for network\n");
+					break;
+				case 1:
+					printf("对主机重定向Redirect for host\n");
+					break;
+				case 2:
+					printf("对服务类型和网络重定向\nRedirect for TOS and network\n");
+					break;
+				case 3:
+					printf("对服务类型和主机重定向\nRedirect for TOS and host\n");
+					break;
+			}
+		}
+		if(ntohs(icmp->ic_typ)==8)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("回显请求(Ping请求)Echo request\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==9)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("路由器通告Router advertisement\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==10)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("路由器请求Route solicitation\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==11)
+		{
+			switch(ntohs(icmp->ic_cod))
+			{
+				case 0:
+					printf("传输期间生存时间为0\nTTL equals 0 during transit\n");
+					break;
+				case 1:
+					printf("在数据报组装期间生存时间为0\nTTL equals 0 during reassembly\n");
+					break;
+			}
+		}
+		if(ntohs(icmp->ic_typ)==12)
+		{
+			switch(ntohs(icmp->ic_cod))
+			{
+				case 0:
+					printf("坏的IP首部(包括各种差错)\nIP header bad (catchall error)\n");
+					break;
+				case 1:
+					printf("缺少必需的选项\nRequired options missing\n");
+					break;
+			}
+		}
+		if(ntohs(icmp->ic_typ)==13)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("时间戳请求（作废不用）\nTimestamp request (obsolete)\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==14)
+		{
+			printf("时间戳应答(作废不用)\nTimestamp reply (obsolete)\n");
+		}
+		if(ntohs(icmp->ic_typ)==15)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("信息请求(作废不用)\nInformation request (obsolete)\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==16)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("信息应答(作废不用)\nInformation reply (obsolete)\n");
+			}
+		}
+		if(ntohs(icmp->ic_typ)==17)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("地址掩码请求\nAddress mask request\n");
+			}
+
+		}
+		if(ntohs(icmp->ic_typ)==18)
+		{
+			if(ntohs(icmp->ic_cod)==0)
+			{
+				printf("地址掩码应答Address mask reply\n");
+			}
+		}
+		printf("代码CODE       :%d\n",ntohs(icmp->ic_cod));
+		printf("校验和Checksum :0x%04x\n",ntohs(icmp->ic_cod));
         }
-	if(ip->ip_p==IPPROTO_IGMP)
+	if(ip->ip_p==IPPROTO_IGMP)//IGMP报文
 	{
+		struct igmpv1_header* igv1=NULL;
+		igv1=(struct igmpv1_header*)(packet+14+IP_HL(ip)*4);
+		printf("IGMP版本:%d\n",((igv1->ig_typ)>>4)&0x0f);
+		printf("TGMP类型:%d\n",((igv1->ig_typ&0x0f)));
+		printf("校验和CheckSum%d\n",igv1->ig_sum);
+		printf("组地址%s\n",inet_ntoa(igv1->ig_ip));
 	}
 	/*
 	if((strcmp(inet_ntoa(ip->ip_dst),"192.168.1.28")!=0)&&(ethernet->mac_dhost[0]!=0xdc))//尝试转发数据包	目的ip与目的mac不一致时发送
@@ -417,11 +627,18 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         }
         printf("转发数据包结束\n");*/
     }
-    if(ntohs(ethernet->mac_type)==0x0806)
+    if(ntohs(ethernet->mac_type)==0x0806)//arp数据包
     {
+	struct arp_header *arp=NULL;
         arp=(struct arp_header*)(packet+14);
-        printf("操作代码%d\n",ntohs(arp->opcode));
-        (ntohs(arp->opcode)==2)?printf("REPLY\n"):printf("REQUEST\n");
+        printf("硬件类型 cc  ：%d\n",ntohs(arp->har_typ));
+	printf("协议类型     ：%d\n",ntohs(arp->pro_typ));
+	printf("硬件地址长度 :%d\n",ntohs(arp->har_size));
+	printf("协议地址长度 :%d\n",ntohs(arp->pro_size));
+       	printf("操作代码%d\n",ntohs(arp->opcode));
+        (ntohs(arp->opcode)==2)?
+		printf("REPLY(%d)\n",ntohs(arp->opcode)):
+		printf("REQUEST(%d)\n",ntohs(arp->opcode));
         printf("发送者硬件地址\n:%02x %02x %02x %02x %02x %02x\n",
                arp->mac_shost[0],
                arp->mac_shost[1],
@@ -429,6 +646,12 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
                arp->mac_shost[3],
                arp->mac_shost[4],
                arp->mac_shost[5]);
+      	printf("发送者IP地址 ：%d.%d.%d.%d\n",
+               arp->ip_src[0],
+               arp->ip_src[1],
+               arp->ip_src[2],
+               arp->ip_src[3]
+              );
         printf("目标硬件地址  \n:%02x %02x %02x %02x %02x %02x\n",
                arp->mac_dhost[0],
                arp->mac_dhost[1],
@@ -436,13 +659,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
                arp->mac_dhost[3],
                arp->mac_dhost[4],
                arp->mac_dhost[5]);
-        printf("发送者IP地址 ：%d.%d.%d.%d\n",
-               arp->ip_src[0],
-               arp->ip_src[1],
-               arp->ip_src[2],
-               arp->ip_src[3]
-              );
-        printf("目的IP地址   ：%d.%d.%d.%d\n",
+       printf("目的IP地址   ：%d.%d.%d.%d\n",
                arp->ip_dst[0],
                arp->ip_dst[1],
                arp->ip_dst[2],
@@ -467,7 +684,7 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     }
     if(ntohs(ethernet->mac_type)==0x0835)//RARP
     {
-
+	    //较为少用，先保留
     }
     const u_char *ch=(u_char*)packet;
     const u_char *ch2=(u_char*)packet;
@@ -501,7 +718,8 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         }
         printf("\n");
     }
-
+    printf("---------------------------------------------------------------------------\n");
+    printf("总共捕获数据包Packets    :%d\n",count);
 
     count++;
     sqlite3_close(db);

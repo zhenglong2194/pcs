@@ -5,6 +5,12 @@
 typedef unsigned char u_char;
 typedef unsigned short u_short;
 typedef unsigned int u_int;
+
+struct time_packet{
+	long int se;
+	long int us;
+};
+
 struct mac_header{
 	u_char mac_dhost[ETHER_ADDR_LEN];
 	u_char mac_shost[ETHER_ADDR_LEN];
@@ -57,10 +63,23 @@ struct tcp_header{
 struct udp_header{
 	u_short th_sport;
 	u_short th_dport;
-	u_short length;
+	u_short th_len;
 	u_short th_sum;
 };
 
+struct icmp_header{
+	u_char  ic_typ;
+	u_char  ic_cod;
+	u_short ic_sum;
+	u_int   ic_oth;
+};
+
+struct igmpv1_header{
+	u_char  ig_typ;
+	u_char  ig_res;
+	u_short ig_sum;
+	struct in_addr ig_ip;
+};
 struct arp_header{
 	u_short har_typ;;
 	u_short pro_typ;
