@@ -13,7 +13,7 @@
 #include<arpa/inet.h>
 #include<pthread.h>
 #define SIZE_ETHERNET 14
-#define PACKETS_NUMBERS 200
+#define PACKETS_NUMBERS -1
 
 #define ARP_REQUEST 1
 #define ARP_REPLY   2
@@ -240,11 +240,11 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
         exit(1);
     }
     packet_count++;
+    count++;
     printf("*****************************************************************************\n");
     pcap_dump(args,header,packet);
     ethernet = (struct mac_header*)(packet);
     printf("捕获接口Interface Id:     :%s\n",device);
-    //  printf("封装类型Encapsulation type:ethernet(1)\n");
     printf("捕获时间Arrival time      :%s",strtime);
     printf("新纪元时间Epoch Time      :%ld.%06ld seconds\n",header->ts.tv_sec,header->ts.tv_usec);
     long int temp=header->ts.tv_usec-pre_us;
@@ -735,7 +735,44 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	    packet_len=0;
 	    packet_count=0;
     }
-    count++;
+    sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",//PAC表
+  			    count,//包序号
+                            header->len,//包长度
+			    header->caplen,//包实际长度
+			    strtime,//捕获时间
+			    ntohs(tcp->th_sport),//源端口 //注意此处用了tcp指针，应该放到tcp部分 udp
+			    ntohs(tcp->th_dport),//目的端口
+			    inet_ntoa(ip->ip_src),//源IP
+			    inet_ntoa(ip->ip_dst),//目的IP
+			    ip->ip_p,//协议类型
+			    payload);//包数据内容 
+    ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
+    if(ret != SQLITE_OK)
+    {
+	    fprintf(stderr, "SQL error: %s\n",errbuf);
+	    sqlite3_free(errbuf);
+	    exit(1);
+    }
+
+    sql = sqlite2_mprintf("INSERT INTO  NUM VALUE(%d %lf %f )",
+		    count,//包序号
+		    total_len,//总流量
+		    packet_count,//包数/s 存疑
+		    speed,//流量每秒
+		    ip_num,//ip数量
+		    ip_rate,//ip比例
+		    tcp_num,
+		    tcp_rate,
+		    udp_num,
+		    udp_rate,
+		    icmp_num,
+		    icmp_rate,
+		    igmp_num,
+		    igmp_rate,
+		    arp_num,
+		    arp_rate,
+
+
     sqlite3_close(db);
     printf("\n");
 }

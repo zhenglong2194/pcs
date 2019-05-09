@@ -121,7 +121,7 @@ int main(int argc,char ** argv)
     unsigned char buffer[2048];
     memset(buffer,'\0',sizeof(buffer));
     //write()向服务端发送数据   read读取服务端数据
-    if(order=='s')
+    if(order=='s')//请求下载文件
         while(recv(conn_fd,buffer,sizeof(buffer)-1,0)>0)
         {
             for(num=sizeof(buffer)-1; buffer[num]=='\0'&&num>0; num--);
@@ -129,11 +129,11 @@ int main(int argc,char ** argv)
             write(FILE_WT,buffer,num);
             memset(buffer,'\0',sizeof(buffer));
         }
-    if(order=='d')
+    if(order=='d')//删除指定文件
         printf("delete %s\n",name);
-    if(order=='c')
+    if(order=='c')//创建规定配置文件
         printf("create a file %s",name);
-    if(order=='t')
+    if(order=='t')//上传文件
     {
         printf("update file %s",name);
         long int ret;
