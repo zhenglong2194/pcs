@@ -1,20 +1,8 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<pcap/pcap.h>
-#include<arpa/inet.h>
-#include"ethernet.h"
-#include<ctype.h>
-#include<time.h>
-#include<libnet.h>
-#include<string.h>
-#include<unistd.h>
-#include<sqlite3.h>
-#include<net/if.h>
-#include<arpa/inet.h>
-#include<pthread.h>
-#define SIZE_ETHERNET 14
-#define PACKETS_NUMBERS -1
 
+#include"ethernet.h"
+#include<libnet.h>
+#define SIZE_ETHERNET 14
+#define PACKETS_NUMBERS 20
 #define ARP_REQUEST 1
 #define ARP_REPLY   2
 
@@ -30,6 +18,9 @@ char* get_ip(char* device);//得到主机IP MAC
 int get_mac(char* device,unsigned char src_mac[6]);
 void string_to_arry(unsigned char temp[4],char ip[17]);
 
+struct PAC pac;
+struct SIZE si;
+struct NUM nu;
 int send_packets();//用于数据包转发
 char* ip_hostt;
 struct ip_mac ip_form[MAX_IP_NUM];
@@ -213,8 +204,8 @@ int main()
 void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char *packet)
 {
     struct mac_header *ethernet=NULL;
-    static unsigned int tcp_num=0,icmp_num=0,udp_num=0i,igmp_num=0,arp_num=0,rarp_num=0;//个数据包捕获的数量
-    float tcp_rate=0.0f,udp_tate=0.0f,igmp_rate=0.0f,icmp_rate=0.0f,arp_rate=0.0f,rarp_rate=0.0f;
+    static int total_len=0;
+  static unsigned int tcp_num=0,icmp_num=0,udp_num=0,igmp_num=0,arp_num=0,rarp_num=0;//个数据包捕获的数量
     static unsigned int count=0;//总的抓包数 当前值也代表帧序号
     char*    strtime=ctime((const time_t*)&header->ts.tv_sec);//捕获时间
     static struct time_packet time={0,0};
@@ -222,17 +213,35 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     static long int pre_us=0;
     static int packet_len=0;//总流量
     static int time_start=0;
+    static int count_tcp=0,count_udp=0,total=0;
+    static int length1=0,length2=0,length3=0,length4=0,length5=0,length6=0,length7=0;
+    total_len+=header->len;
+    if(header->len>20&&header->len<39)
+	    si.length1++;
+    if(header->len>40&&header->len<79)
+	    si.length2++;
+    if(header->len>80&&header->len<159)
+	    si.length3++;
+    if(header->len>160&&header->len<319)
+	    si.length4++;
+    if(header->len>320&&header->len<639)
+	    si.length5++;
+    if(header->len>640&&header->len<1279)
+	    si.length6++;
+    if(header->len>1280&&header->len<2559)
+	    si.length7++;
     if(count==1)//记录第一个数据包时间
     {
 	    time.se=header->ts.tv_sec;
 	    time.us=header->ts.tv_usec;
     }
     static double packet_count=0;//每秒数据包数量
-    static double speed=0.0;//流量传输速度
+    static int speed=0.0;//流量传输速度
     unsigned char* payload=NULL;
     sqlite3* db;
     char* sql;
     int ret;
+      char * zErrMsg = NULL;
     ret = sqlite3_open("packet.db",&db);
     if(ret)
     {
@@ -392,8 +401,10 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
             unsigned int size_tcp=TH_OFF(tcp)*4;
             payload=(u_char*)(packet+14+IP_HL(ip)*4+size_tcp);
 	    if(payload!=NULL);//tcp的选项字段 //数据库重新设计
-    	    sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
-  			    count,
+	    count_tcp++;
+	    total=count_tcp+count_udp;
+    	    sql = sqlite3_mprintf("REPLACE INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",
+  			    total,
                             header->len,
 			    header->caplen,
 			    strtime,
@@ -402,10 +413,10 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 			    inet_ntoa(ip->ip_src),
 			    inet_ntoa(ip->ip_dst),
 			    ip->ip_p);
-    	    ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
+    	    ret = sqlite3_exec(db,sql,NULL,NULL,&zErrMsg);
 	    if(ret != SQLITE_OK)
     	    {
-	    	    fprintf(stderr, "SQL error: %s\n",errbuf);
+	    	    fprintf(stderr, "SQL error: %s\n",zErrMsg);
             	    sqlite3_free(errbuf);
                     exit(1);
             }
@@ -420,6 +431,28 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	    printf("校验和CheckNum         :%d\n",ntohs(udp->th_sum));
 	    payload=(u_char*)(packet+14+IP_HL(ip)*4+ntohs(udp->th_len));
 	    if(payload!=NULL);//暂时无用 保留
+	    count_udp++;
+	    total=count_tcp+count_udp;
+	    sql = sqlite3_mprintf("REPLACE INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",//PAC表
+  			    total,//包序号
+                            header->len,//包长度
+			    header->caplen,//包实际长度
+			    strtime,//捕获时间
+			    ntohs(udp->th_sport),//源端口 //注意此处用了tcp指针，应该放到tcp部分 udp
+			    ntohs(udp->th_dport),//目的端口
+			    inet_ntoa(ip->ip_src),//源IP
+			    inet_ntoa(ip->ip_dst),//目的IP
+			    ip->ip_p,//协议类型
+			    payload);//包数据内容 
+    ret = sqlite3_exec(db,sql,NULL,NULL,&zErrMsg);
+    if(ret != SQLITE_OK)
+    {
+	    fprintf(stderr, "SQL error: %s\n",zErrMsg);
+	    sqlite3_free(errbuf);
+	    exit(1);
+    }
+
+
         }
         if(ip->ip_p==IPPROTO_ICMP)//ICMP报文
         {
@@ -679,12 +712,10 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
                 for(int j=0; j<6; j++)
                 {
                     ip_form[i].mac[j]=arp->mac_shost[j];
-                    printf("ip_form[%d].mac[%d]:%02x ",i,j,ip_form[i].mac[j]);
                 }
                 printf("\ncopy success\n");
             }
         }
-        printf("比较失败\n");
     }
     if(ntohs(ethernet->mac_type)==0x0835)//RARP
     {
@@ -724,10 +755,30 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
     }
     printf("---------------------------------------------------------------------------\n");
     printf("总共捕获数据包Packets :%d\n",count);
-    printf("传输速度              :%.3fKbps\n",speed);
+    printf("传输速度              :%dKbps\n",speed);
     printf("每秒数据包数          :%.0f/s\n",packet_count);
     packet_len+=header->len;
+     
     packet_count++;
+    sql = sqlite3_mprintf("REPLACE INTO SIZE VALUES(%d,%d,%d,%d,%d,%d,%d,%d)",
+		    count,//包序号
+		    length1,
+		    length2,
+		    length3,
+		    length4,
+		    length5,
+		    length6,
+		    length7
+		    );
+
+   ret = sqlite3_exec(db,sql,NULL,NULL,&zErrMsg);
+   if(ret != SQLITE_OK)
+    {
+	    fprintf(stderr, "SIZE SQL error: %s\n",zErrMsg);
+	    sqlite3_free(errbuf);
+	    exit(1);
+    }
+ 
     if((header->ts.tv_sec-time_start)>1)
     {
 	    speed=packet_len/(header->ts.tv_sec-time_start);//流量速度
@@ -735,44 +786,42 @@ void analyze_packets(u_char *args, const struct pcap_pkthdr *header,const u_char
 	    packet_len=0;
 	    packet_count=0;
     }
-    sql = sqlite3_mprintf("INSERT INTO PAC VALUES(%d,%d,%d,'%s',%d,%d,'%s','%s',%d)",//PAC表
-  			    count,//包序号
-                            header->len,//包长度
-			    header->caplen,//包实际长度
-			    strtime,//捕获时间
-			    ntohs(tcp->th_sport),//源端口 //注意此处用了tcp指针，应该放到tcp部分 udp
-			    ntohs(tcp->th_dport),//目的端口
-			    inet_ntoa(ip->ip_src),//源IP
-			    inet_ntoa(ip->ip_dst),//目的IP
-			    ip->ip_p,//协议类型
-			    payload);//包数据内容 
-    ret = sqlite3_exec(db,sql,NULL,NULL,NULL);
-    if(ret != SQLITE_OK)
-    {
-	    fprintf(stderr, "SQL error: %s\n",errbuf);
-	    sqlite3_free(errbuf);
-	    exit(1);
-    }
-
-    sql = sqlite2_mprintf("INSERT INTO  NUM VALUE(%d %lf %f )",
+    
+  sql = sqlite3_mprintf("REPLACE INTO  NUM VALUES(%d,%d,%f,%d,%d,%d,%d,%d,%d,%d)",
 		    count,//包序号
 		    total_len,//总流量
 		    packet_count,//包数/s 存疑
 		    speed,//流量每秒
-		    ip_num,//ip数量
-		    ip_rate,//ip比例
 		    tcp_num,
-		    tcp_rate,
 		    udp_num,
-		    udp_rate,
 		    icmp_num,
-		    icmp_rate,
 		    igmp_num,
-		    igmp_rate,
 		    arp_num,
-		    arp_rate,
-
-
+		    rarp_num
+		    );
+  
+   ret = sqlite3_exec(db,sql,NULL,NULL,&zErrMsg);
+    if(ret != SQLITE_OK)
+    {
+	    fprintf(stderr, "NUM SQL error: %s\n",zErrMsg);
+	    sqlite3_free(errbuf);
+	    exit(1);
+    }
+    printf("---------------------------------------------------------------------------\n");
+    printf("TCP NUMBER:%d ",tcp_num);
+    printf("UDP NUMBER:%d ",udp_num);
+    printf("ICMP_NUM:%d ",icmp_num);
+    printf("IGMP NUMBER:%d ",igmp_num);
+    printf("ARP NUMBER:%d ",arp_num);
+    printf("RARP NUMBER:%d\n",rarp_num);
+    printf("20~39:%d ",si.length1);
+    printf("40~79:%d ",si.length2);
+    printf("80~159:%d ",si.length3);
+    printf("160~319:%d ",si.length4);
+    printf("320~639:%d ",si.length5);
+    printf("640~1279:%d ",si.length6);
+    printf("1280~2559:%d\n",si.length7);
+ 
     sqlite3_close(db);
     printf("\n");
 }
@@ -909,7 +958,7 @@ void*  send_arp_reply(void* a)
                 }
                 src_ip=libnet_name2addr4(handle,ip_form[0].ip,LIBNET_RESOLVE);
                 dst_ip=libnet_name2addr4(handle,ip_form[dst].ip,LIBNET_RESOLVE);
-                printf("显示的当前的IP地址%s\n本机MAC为：%s\n%02x %d %02x\n",ip_form[dst].ip,ip_form[dst].ip,src_mac[0]&0xff,src_mac[1],src_mac[2]);
+//                printf("显示的当前的IP地址%s\n本机MAC为：%s\n%02x %d %02x\n",ip_form[dst].ip,ip_form[dst].ip,src_mac[0]&0xff,src_mac[1],src_mac[2]);
                 if(dst_ip==-1||src_ip==-1)
                     printf("ip address convert error\n");
                 arp_proto_tag=libnet_build_arp(
@@ -973,6 +1022,4 @@ void string_to_arry(unsigned char temp[4],char ip[17])//本函数目的将字符
         j*=10;
     }
 }
-
-
 

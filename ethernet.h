@@ -1,7 +1,31 @@
 #ifndef ETHERNET_H
 #define ETHERNET_H
+#include<stdio.h>
+#include<stdlib.h>
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<string.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<errno.h>
+#include<sys/stat.h>
+#include<fcntl.h>
+#include<pcap/pcap.h>
+#include<ctype.h>
+#include<time.h>
+#include<string.h>
+#include<sqlite3.h>
+#include<net/if.h>
+#include<pthread.h>
+#include"my_recv.h"
 
+#define SERV_PORT 4600
+#define LISTENQ   12
+#define IVAILDE_VALUE 0
+#define VAILDE_VALUE 1
 #define ETHER_ADDR_LEN 6
+
 typedef unsigned char u_char;
 typedef unsigned short u_short;
 typedef unsigned int u_int;
@@ -81,7 +105,7 @@ struct igmpv1_header{
 	struct in_addr ig_ip;
 };
 struct arp_header{
-	u_short har_typ;;
+	u_short har_typ;
 	u_short pro_typ;
 	u_char  har_size;
 	u_char  pro_size;
@@ -97,4 +121,36 @@ struct ip_mac{
 	unsigned char mac[6];
 };
 
+struct NUM{
+	int total_len;
+	int packet_count;
+	float speed;
+	int tcp_num;
+	int udp_num;
+	int icmp_num;
+	int igmp_num;
+	int arp_num;
+	int rarp_num;
+};
+
+struct PAC{
+	int len;
+	int caplen;
+	char time[24];
+	int sport;
+	int dport;
+	char sip[17];
+	char dip[17];
+	int protoco;
+};
+
+struct SIZE{
+	int length1;
+	int length2;
+	int length3;
+	int length4;
+	int length5;
+	int length6;
+	int length7;
+};
 #endif

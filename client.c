@@ -119,16 +119,32 @@ int main(int argc,char ** argv)
 //	int ii;
     FILE_WT=open(name,O_RDWR|O_CREAT);
     unsigned char buffer[2048];
-    memset(buffer,'\0',sizeof(buffer));
     //write()向服务端发送数据   read读取服务端数据
     if(order=='s')//请求下载文件
-        while(recv(conn_fd,buffer,sizeof(buffer)-1,0)>0)
+    {
+	    long filesize=0;
+	    recv(conn_fd,&filesize,sizeof(long),0);
+	    printf("filesize%ld\n",filesize);
+	    long size=0;
+            memset(buffer,'\0',sizeof(buffer));
+        while(recv(conn_fd,buffer,sizeof(buffer),0)>0)
         {
-            for(num=sizeof(buffer)-1; buffer[num]=='\0'&&num>0; num--);
-            printf("%d\n",num++);
-            write(FILE_WT,buffer,num);
+           // for(num=sizeof(buffer)-1; buffer[num]=='\0'&&num>0; num--);
+           // printf("%d\n",num++);
+	   size+=sizeof(buffer);
+	   printf("size %ld\n",size);
+	   if(size>filesize)
+	   {
+		   size-=sizeof(buffer);
+		   filesize-=size;
+            write(FILE_WT,buffer,filesize);
+	    break;
+	   }
+            write(FILE_WT,buffer,sizeof(buffer));
             memset(buffer,'\0',sizeof(buffer));
         }
+    }
+    close(FILE_WT);
     if(order=='d')//删除指定文件
         printf("delete %s\n",name);
     if(order=='c')//创建规定配置文件
@@ -142,16 +158,20 @@ int main(int argc,char ** argv)
         while(1)
         {
             if(ret=read(FILE_RD,buffer,sizeof(buffer)-1))
-                send(conn_fd,buffer,ret,0);
+	    {
+		    
+               for(num=sizeof(buffer)-1; buffer[num]=='\0'&&num>0; num--);
+                send(conn_fd,buffer,num+1,0);
+               memset(buffer,'\0',sizeof(buffer));
+	    }
             else
                 break;
         }
-        close(FILE_RD);
+      close(FILE_RD);
     }
     printf("COPY OVER\n");
     printf("\n");
     close(conn_fd);//关闭连接
-    close(FILE_WT);
     return 0;
 }
 
